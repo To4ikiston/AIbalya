@@ -19,8 +19,8 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
 bot = Bot(token=BOT_TOKEN)
 
-# Создаем Dispatcher для обработки обновлений
-dispatcher = Dispatcher(bot, None, workers=0, use_context=True)
+# Создаем Dispatcher с workers=2 (чтобы обработка обновлений проходила в потоках)
+dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
 # Локальное хранилище контекста для каждого чата
 contexts = {}
