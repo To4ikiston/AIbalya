@@ -1,23 +1,29 @@
 import os
 import logging
-from flask import Flask, request, jsonify
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
+from flask import Flask, request
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Получаем токен бота из переменной окружения BOT_TOKEN, установленной в Render
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-bot = Bot(token=BOT_TOKEN)
-dispatcher = Dispatcher(bot, None, workers=0, use_context=True)
+# Конфигурация из переменных окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+SECRET_TOKEN = os.getenv("SECRET_TOKEN")
 
-# Локальное хранение контекста (для простоты используем словарь)
-contexts = {}
+# Инициализация бота
+application = Application.builder().token(BOT_TOKEN).build()
 
-# Определение вариантов мозгового штурма с именами и промтами
+# Хранилище контекста (в памяти)
+context_storage = {}
+
+# Конфигурация ролей мозгового штурма
 BRAINSTORM_ROLES = {
     "gradis": {
          "name": "ГРАДИС",
@@ -43,112 +49,105 @@ BRAINSTORM_ROLES = {
     }
 }
 
-# Команда /start
-def start(update, context):
-    update.message.reply_text("Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для получения списка команд.")
 
-# Команда /help с подробным описанием
-def help_command(update, context):
-    help_text = (
-        "Список команд:\n"
-        "/start - Запуск бота\n"
-        "/help - Справка по командам\n"
-        "/ask <вопрос> - Задать вопрос. Пример: /ask Как улучшить проект?\n"
-        "/context - Показать последние сообщения, сохраненные в контексте\n"
-        "/context setlimit <число> - Установить лимит сообщений для контекста. Пример: /context setlimit 30\n"
-        "/context remove <номер> - Удалить конкретное сообщение из контекста. Пример: /context remove 2\n"
-        "/clear - Очистить контекст\n"
-        "/brainstorm - Запустить мозговой штурм с выбором варианта\n"
-        "/summarize - Подвести итог беседы (будет добавлено позже)\n"
-        "\nТакже если вы упомянете @VALTOR, я отвечу автоматически!"
+# ========== Обработчики команд ==========
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🚀 Привет! Я ВАЛТОР - ваш цифровой помощник.\n"
+        "Используйте /help для списка команд"
     )
-    update.message.reply_text(help_text)
 
-# Команда /ask
-def ask(update, context):
-    chat_id = update.message.chat_id
-    user_text = update.message.text.replace("/ask", "").strip()
-    if not user_text:
-        update.message.reply_text("Пожалуйста, введите вопрос после /ask")
-        return
-    # Здесь можно добавить вызов внешнего API с использованием контекста
-    update.message.reply_text(f"Ответ на ваш вопрос: {user_text}")
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "📋 Доступные команды:\n"
+        "/start - Начало работы\n"
+        "/help - Эта справка\n"
+        "/brainstorm - Мозговой штурм\n"
+        "/context - Показать историю\n"
+        "/clear - Очистить историю\n\n"
+        "Просто напишите @VALTOR в любом сообщении чтобы активировать бота!"
+    )
+    await update.message.reply_text(help_text)
 
-# Команда /context — показать контекст
-def show_context(update, context):
-    chat_id = update.message.chat_id
-    msgs = contexts.get(chat_id, [])
-    if msgs:
-        text = "\n".join(f"{i+1}. {msg}" for i, msg in enumerate(msgs))
-    else:
-        text = "Контекст пуст."
-    update.message.reply_text(text)
-
-# Команда /clear — очистить контекст
-def clear_context(update, context):
-    chat_id = update.message.chat_id
-    contexts[chat_id] = []
-    update.message.reply_text("Контекст очищен.")
-
-# Команда /brainstorm — вывод inline-кнопок для выбора варианта мозгового штурма
-def brainstorm(update, context):
+async def brainstorm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [InlineKeyboardButton("ГРАДИС", callback_data="brainstorm_gradis")],
-        [InlineKeyboardButton("НОВАРИС", callback_data="brainstorm_novaris")],
-        [InlineKeyboardButton("АКСИОС", callback_data="brainstorm_aksios")],
-        [InlineKeyboardButton("ИНСПЕКТРА", callback_data="brainstorm_inspectra")]
+        [InlineKeyboardButton(role["name"], callback_data=f"mode_{key}")]
+        for key, role in BRAINSTORM_ROLES.items()
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Выберите вариант мозгового штурма:", reply_markup=reply_markup)
+    await update.message.reply_text(
+        "🔍 Выберите режим работы:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
-# Обработчик нажатия inline-кнопок
-def button_callback(update, context):
-    query = update.callback_query
-    query.answer()
-    data = query.data
-    if data.startswith("brainstorm_"):
-        role_key = data.replace("brainstorm_", "")
-        role = BRAINSTORM_ROLES.get(role_key)
-        if role:
-            chat_id = query.message.chat_id
-            msgs = contexts.get(chat_id, [])
-            context_text = "\n".join(msgs[-5:]) if msgs else "Нет контекста."
-            response = f"{role['name']} отвечает:\nПромт: {role['prompt']}\nКонтекст:\n{context_text}"
-            query.edit_message_text(text=response)
-        else:
-            query.edit_message_text(text="Ошибка: роль не найдена.")
+async def handle_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    history = "\n".join(context_storage.get(chat_id, ["История пуста"]))
+    await update.message.reply_text(f"📜 История чата:\n{history}")
 
-# Обработчик всех обычных сообщений — сохраняем в контексте и проверяем упоминание бота
-def echo(update, context):
+async def clear_context(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.message.chat_id
+    context_storage[chat_id] = []
+    await update.message.reply_text("🧹 История очищена!")
+
+# ========== Обработчики сообщений ==========
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     text = update.message.text
-    if chat_id not in contexts:
-        contexts[chat_id] = []
-    contexts[chat_id].append(text)
-    if "ВАЛТОР" in text.upper() or "@VALTOR" in text.upper():
-        update.message.reply_text("Вы позвали меня? Используйте /ask для вопросов или /brainstorm для мозгового штурма.")
+    
+    # Сохраняем сообщение в историю
+    if chat_id not in context_storage:
+        context_storage[chat_id] = []
+    context_storage[chat_id].append(text[:500])  # Ограничение длины
+    
+    # Реакция на упоминание
+    if "@valtor" in text.lower():
+        await update.message.reply_text(
+            "✅ ВАЛТОР активирован! Используйте /brainstorm для начала работы",
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Старт", callback_data="mode_novaris")]])
+        )
 
-# Регистрируем обработчики команд и сообщений
-dispatcher.add_handler(CommandHandler("start", start))
-dispatcher.add_handler(CommandHandler("help", help_command))
-dispatcher.add_handler(CommandHandler("ask", ask))
-dispatcher.add_handler(CommandHandler("context", show_context))
-dispatcher.add_handler(CommandHandler("clear", clear_context))
-dispatcher.add_handler(CommandHandler("brainstorm", brainstorm))
-dispatcher.add_handler(CallbackQueryHandler(button_callback))
-dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, echo))
+# ========== Inline-обработчики ==========
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    if query.data.startswith("mode_"):
+        mode = query.data[5:]
+        role = BRAINSTORM_ROLES.get(mode)
+        
+        if role:
+            response = (
+                f"⚡ Активирован режим: {role['name']}\n"
+                f"📝 {role['prompt']}\n\n"
+                "Отправьте ваш запрос для анализа!"
+            )
+            await query.edit_message_text(response)
+        else:
+            await query.edit_message_text("❌ Режим не найден")
 
-# Точка входа для вебхуков. URL будет вида: https://<RENDER_URL>/<BOT_TOKEN>
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
-def webhook():
-    update = Update.de_json(request.get_json(force=True), bot)
-    dispatcher.process_update(update)
-    return jsonify({"status": "ok"})
+# ========== Вебхук и запуск ==========
+@app.post('/webhook')
+async def webhook():
+    if request.headers.get('X-Telegram-Bot-Api-Secret-Token') != SECRET_TOKEN:
+        return "Unauthorized", 401
+    
+    json_data = await request.get_json()
+    update = Update.de_json(json_data, application.bot)
+    await application.process_update(update)
+    return 'ok', 200
 
-# Точка проверки работы сервера
-@app.route("/")
-def index():
-    return "Бот ВАЛТОР работает!"
+@app.get('/')
+def health_check():
+    return "🤖 Бот ВАЛТОР в активном режиме", 200
+
+# Регистрация обработчиков
+application.add_handler(CommandHandler("start", start))
+application.add_handler(CommandHandler("help", help_command))
+application.add_handler(CommandHandler("brainstorm", brainstorm))
+application.add_handler(CommandHandler("context", handle_context))
+application.add_handler(CommandHandler("clear", clear_context))
+application.add_handler(CallbackQueryHandler(button_handler))
+application.add_handler(MessageHandler(None, handle_message))
 
 if __name__ == "__main__":
-    app.run(port=int(os.environ.get("PORT", 5000)))
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 10000)))
