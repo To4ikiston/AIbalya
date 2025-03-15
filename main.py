@@ -10,155 +10,205 @@ from telegram.ext import (
     Filters
 )
 
+#############################################################################
+# 0. Общая настройка
+#############################################################################
+
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
-# Токен бота из переменной окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 bot = Bot(token=BOT_TOKEN)
 
-# Если в будущем решите хранить URL приложения в переменной окружения:
-# APP_URL = os.getenv("APP_URL", "https://aibalya-1.onrender.com")
-
-# Создаем Dispatcher с несколькими воркерами
+# Создаём Dispatcher с несколькими потоками
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
+# Хранилище контекста:
+# contexts[chat_id] = {
+#   "messages": [строки],  # список сообщений
+#   "limit": 30            # лимит для хранения
+# }
+contexts = {}
+
 #############################################################################
-# 1. Заготовка функции для будущего вызова DeepSeek (сейчас — заглушка)
+# 1. Заглушки для API (DeepSeek и т.п.)
 #############################################################################
 
 def call_deepseek_api(question: str, context_messages: list) -> str:
     """
-    Заглушка. Позже здесь будет реальный вызов DeepSeek, например:
-    
-    import requests
-    
-    DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-    response = requests.post(
-        "https://api.deepseek.ai/v1/ask",
-        json={
-            "question": question,
-            "context": context_messages
-        },
-        headers={"Authorization": f"Bearer {DEEPSEEK_API_KEY}"}
-    )
-    data = response.json()
-    return data["answer"]
-    
-    Пока возвращаем примерный текст:
+    Здесь будет реальный вызов DeepSeek, когда у вас появится ключ.
+    Пока заглушка просто возвращает вопрос + последние 5 сообщений контекста.
     """
-    joined_context = "\n".join(context_messages[-5:])  # последние 5 сообщений
+    last5 = "\n".join(context_messages[-5:])
     return (
-        f"Это заглушка для DeepSeek. Ваш вопрос: {question}\n"
-        f"Контекст (последние 5 сообщений):\n{joined_context}"
+        f"=== ЗАГЛУШКА DeepSeek ===\n"
+        f"Вопрос: {question}\n\n"
+        f"Последние 5 сообщений:\n{last5}"
+    )
+
+def summarize_context(context_messages: list) -> str:
+    """
+    Заглушка для команды /summarize.
+    Реально вы могли бы вызывать DeepSeek или другую модель для суммирования.
+    Пока делаем примитив.
+    """
+    if not context_messages:
+        return "Контекст пуст, нечего суммировать."
+    # Допустим, просто берём 5 последних и выдаём "итоги"
+    last5 = context_messages[-5:]
+    summary = "\n".join(last5)
+    return (
+        "=== ЗАГЛУШКА ИТОГОВ ===\n"
+        "Вот 5 последних сообщений:\n"
+        f"{summary}\n\n"
+        "Допустим, это краткий обзор."
     )
 
 #############################################################################
-# 2. Локальное хранилище контекста для каждого чата
+# 2. Вспомогательные функции для работы с контекстом
 #############################################################################
 
-# Например, словарь: {(chat_id, thread_id?): [строки сообщений]}
-# Для простоты — пока только по chat_id, без учёта thread_id
-contexts = {}
-
-def get_context(chat_id: int) -> list:
-    """Возвращает список сообщений для данного чата."""
+def get_chat_context(chat_id: int) -> dict:
+    """Возвращает структуру контекста для данного chat_id."""
     if chat_id not in contexts:
-        contexts[chat_id] = []
+        contexts[chat_id] = {
+            "messages": [],
+            "limit": 30,  # по умолчанию храним 30 последних
+        }
     return contexts[chat_id]
 
-def add_to_context(chat_id: int, text: str):
-    """Добавляет текст сообщения в контекст."""
-    if chat_id not in contexts:
-        contexts[chat_id] = []
-    contexts[chat_id].append(text)
-    # Можно ограничить размер, например, 50 сообщений:
-    if len(contexts[chat_id]) > 50:
-        contexts[chat_id] = contexts[chat_id][-50:]
-
+def add_message_to_context(chat_id: int, message: str):
+    ctx = get_chat_context(chat_id)
+    ctx["messages"].append(message)
+    # Если превысили лимит — обрезаем начало
+    limit = ctx["limit"]
+    if len(ctx["messages"]) > limit:
+        ctx["messages"] = ctx["messages"][-limit:]
 
 #############################################################################
 # 3. Обработчики команд
 #############################################################################
 
 def start_command(update, context):
-    logging.info("Обработчик /start вызван")
+    logging.info("Команда /start вызвана")
     update.message.reply_text(
         "Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для списка команд."
     )
 
 def help_command(update, context):
-    logging.info("Обработчик /help вызван")
-    help_text = (
-        "Список команд:\n"
-        "/start — приветственное сообщение\n"
-        "/help — справка по командам\n"
-        "/ask <вопрос> — задать вопрос (в будущем к DeepSeek)\n"
-        "/context — показать текущий контекст\n"
-        "/context remove <номер> — удалить одно сообщение по индексу\n"
-        "/clear — очистить весь контекст\n"
-        "/brainstorm — мозговой штурм (выбрать ГРАДИС, НОВАРИС и т.д.)\n"
+    logging.info("Команда /help вызвана")
+    text = (
+        "Доступные команды:\n"
+        "/start — приветствие\n"
+        "/help — эта справка\n"
+        "/ask <вопрос> — задать вопрос (заглушка для DeepSeek)\n"
+        "/summarize — подвести итоги последних сообщений\n"
+        "/context — показать весь контекст (по умолчанию, до 30 сообщений)\n"
+        "/context setlimit <число> — изменить лимит хранения\n"
+        "/context remove <номер> — удалить сообщение по индексу\n"
+        "/clear — очистить контекст\n"
+        "/brainstorm — запустить мозговой штурм (ГРАДИС, НОВАРИС, АКСИОС, ИНСПЕКТРА)\n"
     )
-    update.message.reply_text(help_text)
+    update.message.reply_text(text)
 
 def ask_command(update, context):
-    logging.info("Обработчик /ask вызван")
+    logging.info("Команда /ask вызвана")
     chat_id = update.message.chat_id
-
-    # Текст, идущий после "/ask"
+    # Текст вопроса
     user_text = update.message.text.replace("/ask", "", 1).strip()
     if not user_text:
         update.message.reply_text("Пожалуйста, введите вопрос после /ask.")
         return
 
-    # Берём контекст
-    current_context = get_context(chat_id)
+    ctx = get_chat_context(chat_id)
+    messages = ctx["messages"]
+
     # Вызываем заглушку DeepSeek
-    answer = call_deepseek_api(user_text, current_context)
+    answer = call_deepseek_api(user_text, messages)
     update.message.reply_text(answer)
 
-def show_context_command(update, context):
-    logging.info("Обработчик /context вызван")
+def summarize_command(update, context):
+    logging.info("Команда /summarize вызвана")
     chat_id = update.message.chat_id
-    msgs = get_context(chat_id)
-    if not msgs:
+    ctx = get_chat_context(chat_id)
+    messages = ctx["messages"]
+    answer = summarize_context(messages)
+    update.message.reply_text(answer)
+
+def context_command(update, context):
+    """
+    /context
+    /context setlimit <число>
+    /context remove <номер>
+    """
+    logging.info("Команда /context вызвана")
+    chat_id = update.message.chat_id
+    text = update.message.text.strip()
+    parts = text.split()
+    if len(parts) == 1:
+        # Просто показать контекст
+        show_full_context(update, chat_id)
+        return
+
+    # Есть подкоманда
+    subcmd = parts[1]
+    if subcmd == "setlimit":
+        if len(parts) < 3:
+            update.message.reply_text("Формат: /context setlimit <число>")
+            return
+        try:
+            limit = int(parts[2])
+            ctx = get_chat_context(chat_id)
+            ctx["limit"] = limit
+            # Обрежем, если уже превышаем
+            if len(ctx["messages"]) > limit:
+                ctx["messages"] = ctx["messages"][-limit:]
+            update.message.reply_text(f"Лимит контекста изменён на {limit} сообщений.")
+        except ValueError:
+            update.message.reply_text("Неверный формат числа.")
+    elif subcmd == "remove":
+        if len(parts) < 3:
+            update.message.reply_text("Формат: /context remove <номер>")
+            return
+        try:
+            index_str = parts[2]
+            index_to_remove = int(index_str)
+            ctx = get_chat_context(chat_id)
+            if 1 <= index_to_remove <= len(ctx["messages"]):
+                removed_msg = ctx["messages"].pop(index_to_remove - 1)
+                update.message.reply_text(f"Удалено: {removed_msg}")
+            else:
+                update.message.reply_text("Номер сообщения вне диапазона.")
+        except ValueError:
+            update.message.reply_text("Неверный формат номера.")
+    else:
+        update.message.reply_text("Неизвестная подкоманда для /context.")
+
+def show_full_context(update, chat_id: int):
+    """Помощник для вывода полного списка сообщений."""
+    ctx = get_chat_context(chat_id)
+    messages = ctx["messages"]
+    if not messages:
         update.message.reply_text("Контекст пуст.")
         return
-    # Показать сообщения, пронумеровав
     lines = []
-    for i, msg in enumerate(msgs, start=1):
+    for i, msg in enumerate(messages, start=1):
         lines.append(f"{i}. {msg}")
     text = "\n".join(lines)
     update.message.reply_text(text)
 
-def context_remove_command(update, context):
-    """Пример: /context remove 3"""
-    chat_id = update.message.chat_id
-    current_context = get_context(chat_id)
-
-    parts = update.message.text.split()
-    if len(parts) < 3:
-        update.message.reply_text("Формат: /context remove <номер>")
-        return
-    try:
-        index_to_remove = int(parts[2])  # "3"
-        if 1 <= index_to_remove <= len(current_context):
-            removed_msg = current_context.pop(index_to_remove - 1)
-            update.message.reply_text(f"Удалено: {removed_msg}")
-        else:
-            update.message.reply_text("Номер сообщения вне диапазона.")
-    except ValueError:
-        update.message.reply_text("Неверный формат номера.")
-
 def clear_command(update, context):
-    logging.info("Обработчик /clear вызван")
+    logging.info("Команда /clear вызвана")
     chat_id = update.message.chat_id
-    contexts[chat_id] = []
+    contexts[chat_id] = {
+        "messages": [],
+        "limit": 30
+    }
     update.message.reply_text("Контекст очищен.")
 
 #############################################################################
-# 4. Мозговой штурм (inline-кнопки)
+# 4. Мозговой штурм (brainstorm)
 #############################################################################
 
 BRAINSTORM_ROLES = {
@@ -168,7 +218,7 @@ BRAINSTORM_ROLES = {
     },
     "novaris": {
         "name": "НОВАРИС",
-        "prompt": "Новарис мыслит за пределами шаблонов, генерируя..."
+        "prompt": "Новарис мыслит за пределами шаблонов..."
     },
     "aksios": {
         "name": "АКСИОС",
@@ -176,23 +226,22 @@ BRAINSTORM_ROLES = {
     },
     "inspectra": {
         "name": "ИНСПЕКТРА",
-        "prompt": "Инспектра фокусируется на генерации идей без анализа..."
-    },
+        "prompt": "Инспектра фокусируется на генерации идей без анализа прошлого..."
+    }
 }
 
 def brainstorm_command(update, context):
-    logging.info("Обработчик /brainstorm вызван")
+    logging.info("Команда /brainstorm вызвана")
     keyboard = [
         [InlineKeyboardButton("ГРАДИС", callback_data="brainstorm_gradis")],
         [InlineKeyboardButton("НОВАРИС", callback_data="brainstorm_novaris")],
         [InlineKeyboardButton("АКСИОС", callback_data="brainstorm_aksios")],
-        [InlineKeyboardButton("ИНСПЕКТРА", callback_data="brainstorm_inspectra")],
+        [InlineKeyboardButton("ИНСПЕКТРА", callback_data="brainstorm_inspectra")]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Выберите вариант мозгового штурма:", reply_markup=reply_markup)
+    markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text("Выберите вариант мозгового штурма:", reply_markup=markup)
 
 def button_callback(update, context):
-    """Обработчик нажатий inline-кнопок (callback_data)."""
     query = update.callback_query
     query.answer()
     data = query.data
@@ -204,53 +253,47 @@ def button_callback(update, context):
         if not role_info:
             query.edit_message_text("Ошибка: роль не найдена.")
             return
+
         chat_id = query.message.chat_id
-        current_context = get_context(chat_id)
-        last_msgs = "\n".join(current_context[-5:])
-        # Тут тоже можно вызвать `call_deepseek_api` или что-то подобное
-        answer = (
+        ctx = get_chat_context(chat_id)
+        last_msgs = ctx["messages"][-5:]
+        text = (
             f"{role_info['name']} отвечает!\n"
             f"Промт: {role_info['prompt']}\n\n"
-            f"Последние 5 сообщений:\n{last_msgs}"
+            f"Последние 5 сообщений:\n{'\n'.join(last_msgs)}"
         )
-        query.edit_message_text(answer)
+        query.edit_message_text(text)
 
 #############################################################################
-# 5. Общий обработчик любых текстовых сообщений (не команд)
+# 5. Обработчик обычных сообщений (не команд)
 #############################################################################
 
 def text_handler(update, context):
     chat_id = update.message.chat_id
     text = update.message.text
-    add_to_context(chat_id, text)
+    logging.info(f"Обычный текст от пользователя: {text}")
+    # Сохраняем в контексте
+    add_message_to_context(chat_id, text)
 
-    # Простая реакция, чтобы видно было, что бот "слышит"
-    update.message.reply_text(f"Добавлено в контекст: {text}")
-
+    # Для наглядности бот отвечает, что добавил сообщение
+    update.message.reply_text("Сообщение добавлено в контекст.")
 
 #############################################################################
-# 6. Регистрируем все обработчики в Dispatcher
+# 6. Регистрация команд и запуск
 #############################################################################
 
+# Регистрируем команды
 dispatcher.add_handler(CommandHandler("start", start_command))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("ask", ask_command))
-
-# /context (показать) и /context remove <n> (удалить)
-dispatcher.add_handler(CommandHandler("context", show_context_command))
+dispatcher.add_handler(CommandHandler("summarize", summarize_command))
+dispatcher.add_handler(CommandHandler("context", context_command))
 dispatcher.add_handler(CommandHandler("clear", clear_command))
 dispatcher.add_handler(CommandHandler("brainstorm", brainstorm_command))
 dispatcher.add_handler(CallbackQueryHandler(button_callback))
 
-# Специальный обработчик "context remove ...", чтобы не делать отдельную команду?
-# Можно оставить всё в одной, как сейчас.
-
-# Любые тексты (не команды) - добавляем в контекст
+# Регистрируем обработчик обычного текста
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, text_handler))
-
-#############################################################################
-# 7. Flask endpoints
-#############################################################################
 
 @app.route("/")
 def index():
@@ -258,7 +301,6 @@ def index():
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    """Точка входа для обновлений от Telegram."""
     update_json = request.get_json(force=True)
     logging.info("Получено обновление: %s", update_json)
     update_obj = Update.de_json(update_json, bot)
@@ -266,5 +308,4 @@ def webhook():
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
-    # Для локального запуска
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
