@@ -1,6 +1,3 @@
-python-telegram-bot==21.1.1  # Последняя стабильная версия
-quart==0.19.3  # Асинхронный Flask
-werkzeug==3.0.3  # Совместим с Quart
-hypercorn==0.16.0  # Асинхронный сервер для Quart
-python-dotenv==1.0.0  # Для переменных окружения
-httpx==0.27.0  # Обязательно для PTB 21.x
+Flask==2.2.2
+python-telegram-bot==13.15
+gunicorn==20.1.0
