@@ -37,9 +37,9 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==================== ThreadPoolExecutor для фоновых задач ====================
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ==================== Функция для обработки HTML (замена <br> на \n) ====================
+# ==================== Функция для обработки HTML ====================
 def escape_html(text: str) -> str:
-    # Заменяем теги <br> на символы перевода строки и экранируем &, <, >
+    # Заменяем теги <br> на перевод строки, экранируем символы
     text = text.replace("<br>", "\n").replace("<br/>", "\n")
     return (text.replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -353,7 +353,8 @@ def active_command(update, context):
     chat_id = update.effective_chat.id
     if chat_id in active_characters and active_characters[chat_id]:
         names = [WARHAMMER_CHARACTERS[char_id]["display_name"] for char_id in active_characters[chat_id]]
-        update.message.reply_text(f"<b>На поле битвы активны:</b>\n{'\n'.join(names)}", parse_mode=ParseMode.HTML)
+        names_joined = "\n".join(names)
+        update.message.reply_text(f"<b>На поле битвы активны:</b>\n{names_joined}", parse_mode=ParseMode.HTML)
     else:
         update.message.reply_text("В этот час нет призванных воинов.")
 
