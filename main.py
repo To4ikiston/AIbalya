@@ -37,8 +37,10 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==================== ThreadPoolExecutor для фоновых задач ====================
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ==================== Функция экранирования для HTML ====================
+# ==================== Функция для обработки HTML (замена <br> на \n) ====================
 def escape_html(text: str) -> str:
+    # Заменяем теги <br> на символы перевода строки и экранируем &, <, >
+    text = text.replace("<br>", "\n").replace("<br/>", "\n")
     return (text.replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;"))
@@ -53,11 +55,11 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
 
 def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
     try:
-        res = supabase.table("messages") \
-            .select("text") \
-            .eq("chat_id", chat_id) \
-            .eq("thread_id", thread_id) \
-            .order("timestamp", desc=True) \
+        res = supabase.table("messages")\
+            .select("text")\
+            .eq("chat_id", chat_id)\
+            .eq("thread_id", thread_id)\
+            .order("timestamp", desc=True)\
             .limit(limit).execute()
         rows = res.data or []
         rows.reverse()
@@ -79,9 +81,9 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
 
 def update_character_state(chat_id: int, character_id: str):
     try:
-        res = supabase.table("characters_state") \
-            .select("*") \
-            .eq("chat_id", chat_id) \
+        res = supabase.table("characters_state")\
+            .select("*")\
+            .eq("chat_id", chat_id)\
             .eq("character_id", character_id).execute()
         rows = res.data or []
         if not rows:
@@ -163,7 +165,7 @@ VALTOR_LORE = {
     "description": (
         "Брат Империума, закалённый в пламени бесконечных сражений с ксеносами и еретиками. "
         "ВАЛТОР – непоколебимый защитник, чей стальной взгляд пробивает тьму хаоса, а его слова – как молоты правосудия. "
-        "Он ведёт своих братьев к свету Императора. Для подробностей нажми <b>/help</b> – дух машины услышит тебя!"
+        "Он ведёт своих братьев к свету Императора. Для подробностей нажми <b>/help</b>."
     )
 }
 
@@ -230,7 +232,7 @@ def start_command(update, context):
     )
     temp_msg = update.message.reply_photo(
         photo=VALTOR_LORE['image_url'],
-        caption="<b>Брат, Император уже зовёт!</b><br>Для подробностей нажми <b>/help</b>.",
+        caption="<b>Брат, Император уже зовёт!</b>\nДля подробностей нажми <b>/help</b>.",
         parse_mode=ParseMode.HTML
     )
     for generated in stream_deepseek_api(prompt, []):
@@ -308,7 +310,7 @@ def button_callback(update, context):
         bot.send_animation(
             chat_id=chat_id,
             animation=char["gif_url"],
-            caption=f"<b>{char['display_name']}</b><br>{char['description']}",
+            caption=f"<b>{char['display_name']}</b>\n{char['description']}",
             parse_mode=ParseMode.HTML,
             reply_markup=markup
         )
@@ -338,7 +340,7 @@ def button_callback(update, context):
                     bot.edit_message_caption(
                         chat_id=chat_id,
                         message_id=temp_msg.message_id,
-                        caption=f"<b>Призыв №{summon_count}:</b><br>{generated}",
+                        caption=f"<b>Призыв №{summon_count}:</b>\n{generated}",
                         parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
@@ -351,7 +353,7 @@ def active_command(update, context):
     chat_id = update.effective_chat.id
     if chat_id in active_characters and active_characters[chat_id]:
         names = [WARHAMMER_CHARACTERS[char_id]["display_name"] for char_id in active_characters[chat_id]]
-        update.message.reply_text(f"<b>На поле битвы активны:</b><br>{'<br>'.join(names)}", parse_mode=ParseMode.HTML)
+        update.message.reply_text(f"<b>На поле битвы активны:</b>\n{'\n'.join(names)}", parse_mode=ParseMode.HTML)
     else:
         update.message.reply_text("В этот час нет призванных воинов.")
 
@@ -373,7 +375,7 @@ def dismiss_command(update, context):
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=temp_msg.message_id,
-                        text=f"<blockquote>Прощание с <b>{char['display_name']}</b>:<br>{generated}</blockquote>",
+                        text=f"<blockquote>Прощание с <b>{char['display_name']}</b>:\n{generated}</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
@@ -408,7 +410,7 @@ def summarize_command(update, context):
                 bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=temp_msg.message_id,
-                    text=f"<b>Итог битвы:</b><br>{generated}",
+                    text=f"<b>Итог битвы:</b>\n{generated}",
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
@@ -434,7 +436,7 @@ def text_message_handler(update, context):
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=temp_message.message_id,
-                        text=f"<blockquote>Ответ Императора:<br>{generated}</blockquote>",
+                        text=f"<blockquote>Ответ Императора:\n{generated}</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
@@ -456,7 +458,7 @@ def text_message_handler(update, context):
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=temp.message_id,
-                        text=f"<b>{char['display_name']}</b> отвечает:<br>{generated}",
+                        text=f"<b>{char['display_name']}</b> отвечает:\n{generated}",
                         parse_mode=ParseMode.HTML
                     )
                 except Exception as e:
@@ -478,7 +480,7 @@ def text_message_handler(update, context):
                             bot.edit_message_text(
                                 chat_id=chat_id,
                                 message_id=temp.message_id,
-                                text=f"<blockquote><b>{char['display_name']}</b> (комментарий):<br>{generated}</blockquote>",
+                                text=f"<blockquote><b>{char['display_name']}</b> (комментарий):\n{generated}</blockquote>",
                                 parse_mode=ParseMode.HTML
                             )
                         except Exception as e:
