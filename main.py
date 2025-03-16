@@ -3,44 +3,41 @@ import logging
 import requests
 from flask import Flask, request, jsonify
 from telegram import (
-    Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, ParseMode
+    Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 )
 from telegram.ext import (
     Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
 )
 
-# ================================ ЛОГИРОВАНИЕ И ИНИЦИАЛИЗАЦИЯ ================================
+# ================================ Настройка логирования ================================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# ================================ Инициализация приложения ================================
 app = Flask(__name__)
 
-# Получаем переменные окружения
+# Получение переменных окружения
 BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-APP_URL = os.getenv("APP_URL", "")         # Например: https://aibalya-1.onrender.com
-SECRET_TOKEN = os.getenv("SECRET_TOKEN", "")  # Секретный токен для вебхука
+APP_URL = os.getenv("APP_URL", "")  # Например: https://aibalya-1.onrender.com
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", "")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
-# ================================ ПОДКЛЮЧЕНИЕ К SUPABASE ================================
+# ================================ Подключение к Supabase ================================
 from supabase import create_client, Client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
-    """
-    Сохраняет сообщение в таблицу messages.
-    Таблица должна содержать: id, chat_id, thread_id, user_id, text, timestamp (default now())
-    """
+    """Сохраняет сообщение в таблицу messages (поля: chat_id, thread_id, user_id, text, timestamp)."""
     try:
         data = {
             "chat_id": chat_id,
-            "thread_id": thread_id,  # Если тема отсутствует, передавайте NULL или 0
+            "thread_id": thread_id,  # Если тема отсутствует, можно передавать chat_id или NULL
             "user_id": user_id,
             "text": text
         }
@@ -49,16 +46,14 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
         logger.warning(f"Ошибка записи в DB: {e}")
 
 def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
-    """
-    Извлекает последние 'limit' сообщений для данного чата и темы.
-    """
+    """Возвращает последние limit сообщений для данного chat_id и thread_id."""
     try:
-        res = supabase.table("messages") \
-            .select("text") \
-            .eq("chat_id", chat_id) \
-            .eq("thread_id", thread_id) \
-            .order("timestamp", desc=True) \
-            .limit(limit) \
+        res = supabase.table("messages")\
+            .select("text")\
+            .eq("chat_id", chat_id)\
+            .eq("thread_id", thread_id)\
+            .order("timestamp", desc=True)\
+            .limit(limit)\
             .execute()
         rows = res.data or []
         rows.reverse()  # От старых к новым
@@ -68,18 +63,14 @@ def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
         return []
 
 def save_conversation_history(chat_id: int, thread_id: int, active_character: str, conversation: list):
-    """
-    Сохраняет историю разговора в таблицу conversation_history.
-    Таблица должна содержать: id, chat_id, thread_id, session_start, session_end, conversation, active_character.
-    Здесь conversation сохраняется как текст (соединяем сообщения через '\n').
-    """
+    """Сохраняет сессию в таблицу conversation_history."""
     conversation_text = "\n".join(conversation)
     data = {
         "chat_id": chat_id,
         "thread_id": thread_id,
         "conversation": conversation_text,
         "active_character": active_character,
-        "session_end": "now()"  # Supabase может использовать now() или вы передадите текущее время
+        "session_end": "now()"
     }
     try:
         supabase.table("conversation_history").insert(data).execute()
@@ -87,16 +78,16 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
     except Exception as e:
         logger.warning(f"Ошибка сохранения истории сессии: {e}")
 
-# ================================ ОБНОВЛЕНИЕ СОСТОЯНИЯ ПЕРСОНАЖЕЙ ================================
+# ================================ Состояние персонажей ================================
 def update_character_state(chat_id: int, character_id: str):
     """
-    Обновляет или создает запись в таблице characters_state для данного чата и персонажа.
+    Обновляет или создаёт запись в таблице characters_state для данного чата и персонажа.
     """
     try:
-        res = supabase.table("characters_state") \
-            .select("*") \
-            .eq("chat_id", chat_id) \
-            .eq("character_id", character_id) \
+        res = supabase.table("characters_state")\
+            .select("*")\
+            .eq("chat_id", chat_id)\
+            .eq("character_id", character_id)\
             .execute()
         rows = res.data or []
         if not rows:
@@ -111,28 +102,27 @@ def update_character_state(chat_id: int, character_id: str):
         else:
             row = rows[0]
             new_count = row["summon_count"] + 1
-            supabase.table("characters_state") \
-                .update({"summon_count": new_count}) \
+            supabase.table("characters_state")\
+                .update({"summon_count": new_count})\
                 .eq("id", row["id"]).execute()
             return new_count
     except Exception as e:
         logger.warning(f"Ошибка обновления состояния персонажа: {e}")
         return 1
 
-# ================================ DEEPSEEK API ================================
+# ================================ DeepSeek API ================================
 def call_deepseek_api(prompt: str, context_msgs: list) -> str:
     """
     Вызывает DeepSeek API для генерации ответа.
-    Если DEEPSEEK_API_KEY не задан, возвращает заглушку.
+    Если ключ не задан, возвращает заглушку.
     """
     if not DEEPSEEK_API_KEY:
         return f"DeepSeek API не настроен. Prompt: {prompt}\nКонтекст: {context_msgs}"
-    url = "https://api.deepseek.ai/v1/ask"  # Проверьте актуальный URL
+    url = "https://api.deepseek.ai/v1/ask"  # Уточните актуальный URL в документации DeepSeek
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
     }
-    # Используем переданный контекст (например, последние 30 сообщений)
     data = {
         "question": prompt,
         "context": context_msgs[-30:]
@@ -148,11 +138,11 @@ def call_deepseek_api(prompt: str, context_msgs: list) -> str:
 
 def summarize_context(character_name: str, prompt: str, context_msgs: list) -> str:
     """
-    Вызывает DeepSeek API для суммаризации (подведения итогов) при команде /dismiss.
+    Вызывает DeepSeek API для суммаризации перед завершением сессии.
     """
     if not DEEPSEEK_API_KEY:
         return f"Суммаризация: {character_name} говорит: {prompt}\nКонтекст: {context_msgs}"
-    url = "https://api.deepseek.ai/v1/summarize"  # Проверьте актуальный URL для суммаризации
+    url = "https://api.deepseek.ai/v1/summarize"  # Проверьте актуальный URL
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
@@ -170,7 +160,7 @@ def summarize_context(character_name: str, prompt: str, context_msgs: list) -> s
         logger.error(f"DeepSeek Summarize error: {e}")
         return f"Ошибка суммаризации: {e}"
 
-# ================================ ДВУХШАГОВЫЙ РЕЖИМ /ASK ================================
+# ================================ Двухшаговый режим /ask ================================
 awaiting_question = {}  # awaiting_question[chat_id] = True/False
 
 def ask_command(update, context):
@@ -178,8 +168,8 @@ def ask_command(update, context):
     awaiting_question[chat_id] = True
     update.message.reply_text("Введите свой вопрос отдельным сообщением:")
 
-# ================================ ДАННЫЕ О ПЕРСОНАЖАХ (WARHAMMER-СТИЛЬ) ================================
-# Используем прямые ссылки на видео (MP4)
+# ================================ Данные о персонажах (Warhammer-стиль) ================================
+# Используем предоставленные ссылки на MP4 для гифок
 WARHAMMER_CHARACTERS = {
     "gradis": {
         "display_name": "ГРАДИС — Архивариус Знания (Эксперт-человек)",
@@ -223,10 +213,11 @@ WARHAMMER_CHARACTERS = {
     },
 }
 
-# ================================ КОМАНДЫ МОЗГОВОГО ШТУРМА ================================
+# ================================ Команды мозгового штурма ================================
 active_characters = {}  # active_characters[chat_id] = character_id
 
 def brainstorm_command(update, context):
+    # Отправка выпадающего списка команд через inline-кнопки (без ReplyKeyboard)
     keyboard = [
         [InlineKeyboardButton("ГРАДИС", callback_data="select_gradis"),
          InlineKeyboardButton("НОВАРИС", callback_data="select_novaris")],
@@ -248,7 +239,7 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Отправляем сообщение с GIF, описанием и кнопкой "Призвать"
+        # Отправляем сообщение с видео, описанием и кнопкой "Призвать"
         summon_btn = InlineKeyboardButton("Призвать", callback_data=f"summon_{char_id}")
         markup = InlineKeyboardMarkup([[summon_btn]])
         bot.send_animation(
@@ -264,11 +255,10 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Обновляем состояние персонажа в Supabase
+        # Обновляем состояние персонажа в Supabase и регистрируем как активного
         summon_count = update_character_state(chat_id, char_id)
-        # Устанавливаем активного персонажа для чата
         active_characters[chat_id] = char_id
-        greeting = f"Призыв #{summon_count}: *{char['display_name']}* теперь активен и вступает в диалог!"
+        greeting = f"Призыв #{summon_count}: *{char['display_name']}* теперь активен и участвует в диалоге!"
         bot.send_message(
             chat_id=chat_id,
             text=greeting,
@@ -277,7 +267,7 @@ def button_callback(update, context):
     else:
         query.message.reply_text("Неизвестная команда кнопки.")
 
-# ================================ КОМАНДА /active ================================
+# ================================ Команда /active ================================
 def active_command(update, context):
     chat_id = update.effective_chat.id
     if chat_id in active_characters:
@@ -287,10 +277,10 @@ def active_command(update, context):
     else:
         update.message.reply_text("Нет активного персонажа.")
 
-# ================================ КОМАНДА /dismiss ================================
+# ================================ Команда /dismiss ================================
 def dismiss_command(update, context):
     chat_id = update.effective_chat.id
-    # Для темы используем message_thread_id, если есть, иначе chat_id
+    # Определяем thread_id: если тема есть, используем её, иначе chat_id
     thread_id = update.message.message_thread_id or update.effective_chat.id
     if chat_id not in active_characters:
         update.message.reply_text("Нет активного персонажа для прощания.")
@@ -300,7 +290,7 @@ def dismiss_command(update, context):
     msgs = get_last_messages_db(chat_id, thread_id, limit=30)
     summary = summarize_context(char["display_name"], char["prompt"], msgs)
     update.message.reply_text(f"Прощаемся с *{char['display_name']}*.\n{summary}", parse_mode=ParseMode.MARKDOWN)
-    # Сохраняем историю сессии в таблицу conversation_history
+    # Сохраняем историю сессии (conversation_history)
     conv = get_last_messages_db(chat_id, thread_id, limit=100)
     try:
         data = {
@@ -315,26 +305,33 @@ def dismiss_command(update, context):
         logger.warning(f"Ошибка сохранения истории сессии: {e}")
     del active_characters[chat_id]
 
-# ================================ ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ================================
+# ================================ Двухшаговый режим /ask ================================
+def ask_command(update, context):
+    chat_id = update.effective_chat.id
+    awaiting_question[chat_id] = True
+    update.message.reply_text("Введите свой вопрос отдельным сообщением:")
+
+# ================================ Обработчик текстовых сообщений ================================
 def text_message_handler(update, context):
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     text = update.message.text.strip()
-    # Игнорируем команды и сообщения от ботов
+    # Игнорируем сообщения от ботов и команды
     if update.effective_user.is_bot or text.startswith("/"):
         return
-    # Определяем thread_id: если тема есть, используем её, иначе chat_id
+    # Определяем thread_id: если сообщение в теме, используем её, иначе chat_id
     thread_id = update.message.message_thread_id or update.effective_chat.id
-    # Сохраняем сообщение в базу
-    save_message_to_db(chat_id, thread_id, user_id, text)
-    # Если ждём вопроса для /ask, обрабатываем его
+    # Если ждём вопроса для /ask, обрабатываем его и сбрасываем флаг
     if awaiting_question.get(chat_id, False):
         awaiting_question[chat_id] = False
+        save_message_to_db(chat_id, thread_id, user_id, text)
         msgs = get_last_messages_db(chat_id, thread_id, limit=30)
         answer = call_deepseek_api(prompt=text, context_msgs=msgs)
         update.message.reply_text(f"Ответ:\n{answer}")
         return
-    # Если есть активный персонаж, он автоматически отвечает
+    # Сохраняем обычное сообщение в базу
+    save_message_to_db(chat_id, thread_id, user_id, text)
+    # Если активен персонаж, он автоматически отвечает
     if chat_id in active_characters:
         char_id = active_characters[chat_id]
         char = WARHAMMER_CHARACTERS.get(char_id)
@@ -343,7 +340,16 @@ def text_message_handler(update, context):
         answer = call_deepseek_api(prompt=full_prompt, context_msgs=msgs)
         bot.send_message(chat_id=chat_id, text=answer)
 
-# ================================ РЕГИСТРАЦИЯ ОБРАБОТЧИКОВ ================================
+# ================================ Автоматическая установка вебхука ================================
+def set_webhook():
+    if APP_URL:
+        webhook_url = f"{APP_URL}/{BOT_TOKEN}"
+        bot.set_webhook(url=webhook_url, secret_token=SECRET_TOKEN)
+        logger.info(f"Webhook установлен: {webhook_url}")
+    else:
+        logger.warning("APP_URL не задан. Установите вебхук вручную.")
+
+# ================================ Регистрация обработчиков ================================
 dispatcher.add_handler(CommandHandler("start", start_command))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("ask", ask_command))
@@ -355,16 +361,7 @@ dispatcher.add_handler(CommandHandler("dismiss", dismiss_command))
 dispatcher.add_handler(CallbackQueryHandler(button_callback))
 dispatcher.add_handler(MessageHandler(Filters.text, text_message_handler))
 
-# ================================ АВТОМАТИЧЕСКАЯ УСТАНОВКА ВЕБХУКА ================================
-def set_webhook():
-    if APP_URL:
-        webhook_url = f"{APP_URL}/{BOT_TOKEN}"
-        bot.set_webhook(url=webhook_url, secret_token=SECRET_TOKEN)
-        logger.info(f"Webhook установлен: {webhook_url}")
-    else:
-        logger.warning("APP_URL не задан. Установите вебхук вручную.")
-
-# ================================ FLASK ЭНДПОИНТЫ ================================
+# ================================ Flask endpoints ================================
 @app.route("/")
 def index():
     return "Бот ВАЛТОР работает с вебхуками!"
@@ -377,7 +374,7 @@ def webhook_endpoint():
     dispatcher.process_update(update_obj)
     return jsonify({"ok": True})
 
-# ================================ ОСНОВНОЙ ЗАПУСК ================================
+# ================================ Основной запуск ================================
 if __name__ == "__main__":
     set_webhook()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
