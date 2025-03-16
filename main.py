@@ -1,6 +1,5 @@
 import os
 import logging
-import openai  # для работы с DeepSeek через API-интерфейс OpenAI
 from flask import Flask, request, jsonify
 from telegram import (
     Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
@@ -8,6 +7,7 @@ from telegram import (
 from telegram.ext import (
     Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
 )
+import requests
 
 # ==================== Настройка логирования ====================
 logging.basicConfig(level=logging.INFO)
@@ -28,10 +28,6 @@ SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секретный токен д�
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
-# ==================== Настройка DeepSeek через openai ====================
-openai.api_key = DEEPSEEK_API_KEY
-openai.api_base = "https://api.deepseek.com"
-
 # ==================== Подключение к Supabase ====================
 from supabase import create_client, Client
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -41,7 +37,7 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     try:
         data = {
             "chat_id": chat_id,
-            "thread_id": thread_id,  # Если тема не используется, можно передавать chat_id
+            "thread_id": thread_id,  # если тема не используется, передавайте chat_id
             "user_id": user_id,
             "text": text
         }
@@ -82,6 +78,7 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
     except Exception as e:
         logger.warning(f"Ошибка сохранения истории сессии: {e}")
 
+# ==================== Работа с состоянием персонажей ====================
 def update_character_state(chat_id: int, character_id: str):
     """
     Обновляет (увеличивает) счетчик призывов персонажа для данного чата.
@@ -115,22 +112,26 @@ def update_character_state(chat_id: int, character_id: str):
         return 1
 
 # ==================== DeepSeek API через openai ====================
+import openai
+from openai import OpenAI
+
+# Настройка клиента для DeepSeek
+client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+
 def call_deepseek_api(prompt: str, context_msgs: list) -> str:
     """
-    Вызывает DeepSeek API для генерации ответа через openai.ChatCompletion.create.
-    В данном примере используется модель "deepseek-chat".
+    Вызывает DeepSeek API для генерации ответа через client.chat.completions.create.
+    Использует модель "deepseek-chat".
     """
-    # Формируем сообщения: можно добавить системное сообщение или объединить контекст
     messages = [
         {"role": "system", "content": "You are a helpful assistant."}
     ]
-    # Если есть контекст, можно добавить его как отдельное сообщение (опционально)
     if context_msgs:
         context_text = "\n".join(context_msgs)
         messages.append({"role": "system", "content": f"Context:\n{context_text}"})
     messages.append({"role": "user", "content": prompt})
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="deepseek-chat",
             messages=messages,
             stream=False
@@ -142,8 +143,7 @@ def call_deepseek_api(prompt: str, context_msgs: list) -> str:
 
 def summarize_context(character_name: str, prompt: str, context_msgs: list) -> str:
     """
-    Вызывает DeepSeek API для суммаризации через openai.ChatCompletion.create.
-    Здесь можно использовать тот же endpoint, изменив системное сообщение.
+    Вызывает DeepSeek API для суммаризации через client.chat.completions.create.
     """
     messages = [
         {"role": "system", "content": "You are a helpful assistant that summarizes conversations."}
@@ -153,7 +153,7 @@ def summarize_context(character_name: str, prompt: str, context_msgs: list) -> s
         messages.append({"role": "system", "content": f"Conversation Context:\n{context_text}"})
     messages.append({"role": "user", "content": prompt})
     try:
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="deepseek-chat",
             messages=messages,
             stream=False
@@ -177,7 +177,7 @@ def ask_command(update, context):
 
 # ==================== Команда /start ====================
 def start_command(update, context):
-    """Приветствие: отправляет текстовое сообщение."""
+    """Отправляет текстовое приветствие для /start."""
     update.message.reply_text("Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для списка команд.")
 
 # ==================== Данные о персонажах (Warhammer-стиль) ====================
@@ -225,11 +225,11 @@ WARHAMMER_CHARACTERS = {
 }
 
 # ==================== Команды мозгового штурма ====================
-# Теперь поддерживаем несколько активных персонажей в чате (список)
+# Теперь поддерживаем несколько активных персонажей – список для каждого чата.
 active_characters = {}  # active_characters[chat_id] = список character_id
 
 def brainstorm_command(update, context):
-    """Выводит меню выбора персонажа для мозгового штурма."""
+    """Выводит меню выбора персонажа для мозгового штурма (inline кнопки)."""
     keyboard = [
         [InlineKeyboardButton("ГРАДИС", callback_data="select_gradis"),
          InlineKeyboardButton("НОВАРИС", callback_data="select_novaris")],
@@ -252,7 +252,7 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Отправляем видео с описанием и кнопкой "Призвать"
+        # Отправляем видео с описанием и inline кнопкой "Призвать"
         summon_btn = InlineKeyboardButton("Призвать", callback_data=f"summon_{char_id}")
         markup = InlineKeyboardMarkup([[summon_btn]])
         bot.send_animation(
@@ -300,8 +300,7 @@ def active_command(update, context):
 # ==================== Команда /dismiss ====================
 def dismiss_command(update, context):
     """
-    Завершает сессию всех активных персонажей: подводит итог для каждого,
-    сохраняет историю сессии и сбрасывает список активных персонажей.
+    Завершает сессию всех активных персонажей: подводит итоги, сохраняет историю сессии и сбрасывает список активных персонажей.
     """
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or update.effective_chat.id
@@ -366,7 +365,7 @@ def set_webhook():
 
 # ==================== Регистрация обработчиков ====================
 dispatcher.add_handler(CommandHandler("start", start_command))
-dispatcher.add_handler(CommandHandler("help", start_command))  # Если хотите, создайте отдельную /help
+dispatcher.add_handler(CommandHandler("help", start_command))  # При желании создайте отдельную help_command
 dispatcher.add_handler(CommandHandler("ask", ask_command))
 dispatcher.add_handler(CommandHandler("context", lambda update, context: update.message.reply_text(
     "\n".join(get_last_messages_db(update.effective_chat.id, update.message.message_thread_id or update.effective_chat.id, limit=30))
