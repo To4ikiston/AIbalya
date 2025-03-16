@@ -37,7 +37,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==================== ThreadPoolExecutor для фоновых задач ====================
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ==================== Функция для экранирования HTML (минимальное) ====================
+# ==================== Функция экранирования для HTML ====================
 def escape_html(text: str) -> str:
     return (text.replace("&", "&amp;")
                 .replace("<", "&lt;")
@@ -53,13 +53,12 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
 
 def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
     try:
-        res = supabase.table("messages")\
-            .select("text")\
-            .eq("chat_id", chat_id)\
-            .eq("thread_id", thread_id)\
-            .order("timestamp", desc=True)\
-            .limit(limit)\
-            .execute()
+        res = supabase.table("messages") \
+            .select("text") \
+            .eq("chat_id", chat_id) \
+            .eq("thread_id", thread_id) \
+            .order("timestamp", desc=True) \
+            .limit(limit).execute()
         rows = res.data or []
         rows.reverse()
         return [r["text"] for r in rows]
@@ -80,11 +79,10 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
 
 def update_character_state(chat_id: int, character_id: str):
     try:
-        res = supabase.table("characters_state")\
-            .select("*")\
-            .eq("chat_id", chat_id)\
-            .eq("character_id", character_id)\
-            .execute()
+        res = supabase.table("characters_state") \
+            .select("*") \
+            .eq("chat_id", chat_id) \
+            .eq("character_id", character_id).execute()
         rows = res.data or []
         if not rows:
             data = {"chat_id": chat_id, "character_id": character_id, "summon_count": 1, "last_index": 0}
@@ -165,7 +163,7 @@ VALTOR_LORE = {
     "description": (
         "Брат Империума, закалённый в пламени бесконечных сражений с ксеносами и еретиками. "
         "ВАЛТОР – непоколебимый защитник, чей стальной взгляд пробивает тьму хаоса, а его слова – как молоты правосудия. "
-        "Он ведёт своих братьев к свету Императора. Для получения помощи нажми <b>/help</b> – дух машины услышит тебя!"
+        "Он ведёт своих братьев к свету Императора. Для подробностей нажми <b>/help</b> – дух машины услышит тебя!"
     )
 }
 
@@ -174,8 +172,8 @@ WARHAMMER_CHARACTERS = {
         "display_name": "ГРАДИС — Архивариус Знания",
         "gif_url": "https://i.imgur.com/SgyqpOp.mp4",
         "description": (
-            "Хранитель священных манускриптов и библиотека древних тайн. Он обращает хаос кода в священную гармонию. "
-            "Подробное описание: изучай его слова и познавай тайны, сокрытые в священных текстах."
+            "Хранитель священных манускриптов, библиотека древних тайн. Он обращает хаос кода в священную гармонию. "
+            "Изучи его слова, чтобы постичь истину, скрытую в священных текстах."
         ),
         "prompt": "Отвечай строго и возвышенно, как Архивариус, рассеивая ересь неструктурированного кода."
     },
@@ -184,7 +182,7 @@ WARHAMMER_CHARACTERS = {
         "gif_url": "https://i.imgur.com/6oEYvKs.mp4",
         "description": (
             "Сверхразум, порождённый в запретных лабораториях Марса. Он разрывает старые догмы и открывает путь к революционным идеям. "
-            "Изучи его откровения, чтобы увидеть мир сквозь призму бесконечных возможностей."
+            "Вслушайся в его видения, и перед тобой откроется бесконечное множество возможностей."
         ),
         "prompt": "Говори многогранно, разрывая оковы устаревших догм и воздвигая новый порядок."
     },
@@ -192,8 +190,8 @@ WARHAMMER_CHARACTERS = {
         "display_name": "АКСИОС — Незыблемый Столп Эффективности",
         "gif_url": "https://i.imgur.com/q3vBdw3.mp4",
         "description": (
-            "Непреклонный страж порядка, палач неэффективности. Его взгляд – молот правосудия, разоблачающий слабости, "
-            "а его слова направляют воинов к совершенству. Познай его строгость и бескомпромиссность."
+            "Непреклонный страж порядка, палач неэффективности. Его взгляд – как молот правосудия, разоблачающий слабости, "
+            "а его слова направляют воинов к совершенству. Услышь его строгость!"
         ),
         "prompt": "Излагай с безжалостной строгостью, разоблачая слабости и направляя воинов к совершенству."
     },
@@ -202,7 +200,7 @@ WARHAMMER_CHARACTERS = {
         "gif_url": "https://i.imgur.com/fSSPd5h.mp4",
         "description": (
             "Воплощение безумия и гениальности, вихрь идей, разрушающий устоявшие порядки и пробуждающий невиданные возможности. "
-            "Её слова – как пламя, что сжигает старое и рождает новое."
+            "Её слова – как пламя, сжигающее старое и рождающее новое."
         ),
         "prompt": "Генерируй вихри идей, словно буря хаоса, сметая старые порядки и пробуждая новые возможности."
     },
@@ -214,17 +212,25 @@ BRAINSTORM_ANIMATION_URL = "https://i.imgur.com/yAQ8BWC.gif"
 # ==================== Механизм ожидания вопросов ====================
 awaiting_question = {}  # awaiting_question[chat_id] = True/False
 
-# ==================== Команда /start (эпичное приветствие с фото ВАЛТОРа) ====================
+# ==================== Команда /ask ====================
+def ask_command(update, context):
+    chat_id = update.effective_chat.id
+    awaiting_question[chat_id] = True
+    update.message.reply_text(
+        "<b>Слава Императору!</b> Голос твой достиг священных аудио-каналов Империума. Изложи свой вопрос.",
+        parse_mode=ParseMode.HTML
+    )
+
+# ==================== Команда /start ====================
 def start_command(update, context):
     chat_id = update.effective_chat.id
     prompt = (
         f"Сгенерируй эпичное приветствие от космодесантника в стиле Warhammer 40k, "
         f"вдохновляющее воина. Используй данные: {VALTOR_LORE['description']}"
     )
-    # Отправляем фото ВАЛТОРа с начальным приветствием
     temp_msg = update.message.reply_photo(
         photo=VALTOR_LORE['image_url'],
-        caption="<b>Брат, Император уже зовёт!</b>",
+        caption="<b>Брат, Император уже зовёт!</b><br>Для подробностей нажми <b>/help</b>.",
         parse_mode=ParseMode.HTML
     )
     for generated in stream_deepseek_api(prompt, []):
@@ -240,7 +246,7 @@ def start_command(update, context):
                 logger.warning(f"Ошибка редактирования приветствия: {e}")
                 time.sleep(1)
 
-# ==================== Команда /help (динамический список команд) ====================
+# ==================== Команда /help ====================
 def help_command(update, context):
     chat_id = update.effective_chat.id
     prompt = (
@@ -275,7 +281,6 @@ def brainstorm_command(update, context):
          InlineKeyboardButton("ИНСПЕКТРА", callback_data="select_inspectra")]
     ]
     markup = InlineKeyboardMarkup(keyboard)
-    # Вместо обычного текста, отправляем анимацию выбора с дополнительным оформлением
     update.message.reply_animation(
         animation=BRAINSTORM_ANIMATION_URL,
         caption="<b>Выбери воина для мозгового штурма:</b>",
@@ -298,7 +303,6 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Отправляем анимацию с подробным описанием персонажа
         summon_btn = InlineKeyboardButton("Призвать", callback_data=f"summon_{char_id}")
         markup = InlineKeyboardMarkup([[summon_btn]])
         bot.send_animation(
@@ -520,7 +524,7 @@ dispatcher.add_handler(MessageHandler(Filters.text, text_message_handler))
 # ==================== Flask эндпоинты ====================
 @app.route("/")
 def index():
-    return "Бот ВАЛТОР охраняет Империум!"
+    return "Брат, Император охраняет Империум!"
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook_endpoint():
