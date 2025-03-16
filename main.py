@@ -17,16 +17,17 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-APP_URL = os.getenv("APP_URL", "")         # Например, https://aibalya-1.onrender.com
-SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секретный токен для вебхука
+APP_URL = os.getenv("APP_URL", "")         # Например: https://aibalya-1.onrender.com
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секрет для вебхука
 
 # ==================== Инициализация бота и диспетчера ====================
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
 # ==================== Настройка DeepSeek через openai ====================
+# ПИНьте версию библиотеки openai, например, установите openai==0.28 в requirements.txt
 openai.api_key = DEEPSEEK_API_KEY
-openai.api_base = "https://api.deepseek.com"  # новый API-URL
+openai.api_base = "https://api.deepseek.com"
 
 # ==================== Подключение к Supabase ====================
 from supabase import create_client, Client
@@ -37,7 +38,7 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     try:
         data = {
             "chat_id": chat_id,
-            "thread_id": thread_id,  # если тема не используется, можно передавать chat_id
+            "thread_id": thread_id,  # если тема не используется, передавайте chat_id
             "user_id": user_id,
             "text": text
         }
@@ -169,7 +170,7 @@ def ask_command(update, context):
 
 # ==================== Команда /start ====================
 def start_command(update, context):
-    """Отправляет простое текстовое приветствие."""
+    """Отправляет текстовое приветствие."""
     update.message.reply_text("Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для списка команд.")
 
 # ==================== Команда /help ====================
@@ -178,19 +179,18 @@ def help_command(update, context):
     help_text = (
         "/start — Приветствие\n"
         "/help — Справка по командам\n"
-        "/ask <вопрос> — Задать вопрос (двухшаговый режим)\n"
+        "/ask <текст вопроса> — Задать вопрос (двухшаговый режим)\n"
         "/context — Показать последние 30 сообщений\n"
         "/clear — Очистить контекст\n"
         "/brainstorm — Начать мозговой штурм (выбор персонажа)\n"
         "/active — Показать активных персонажей\n"
         "/dismiss — Завершить сессию персонажей и подвести итог\n"
         "/summarize — Подвести итог переписки (опционально)\n"
-        "/stats — Статистика по теме (опционально)"
+        "/stats — Показать статистику (опционально)"
     )
     update.message.reply_text(help_text)
 
 # ==================== Данные о персонажах (Warhammer-стиль) ====================
-# Используем прямые ссылки на MP4 файлы
 WARHAMMER_CHARACTERS = {
     "gradis": {
         "display_name": "ГРАДИС — Архивариус Знания (Эксперт-человек)",
@@ -235,7 +235,6 @@ WARHAMMER_CHARACTERS = {
 }
 
 # ==================== Команды мозгового штурма ====================
-# Поддержка нескольких активных персонажей: для каждого чата хранится список.
 active_characters = {}  # active_characters[chat_id] = список character_id
 
 def brainstorm_command(update, context):
@@ -298,11 +297,7 @@ def active_command(update, context):
     """Показывает список активных персонажей."""
     chat_id = update.effective_chat.id
     if chat_id in active_characters and active_characters[chat_id]:
-        names = []
-        for char_id in active_characters[chat_id]:
-            char = WARHAMMER_CHARACTERS.get(char_id)
-            if char:
-                names.append(char["display_name"])
+        names = [WARHAMMER_CHARACTERS[char_id]["display_name"] for char_id in active_characters[chat_id]]
         update.message.reply_text("Активные персонажи:\n" + "\n".join(names), parse_mode=ParseMode.MARKDOWN)
     else:
         update.message.reply_text("Нет активного персонажа.")
@@ -310,7 +305,7 @@ def active_command(update, context):
 # ==================== Команда /dismiss ====================
 def dismiss_command(update, context):
     """
-    Завершает сессию всех активных персонажей: подводит итоги, сохраняет историю сессии и сбрасывает список активных персонажей.
+    Завершает сессию всех активных персонажей: подводит итог, сохраняет историю сессии и сбрасывает список активных персонажей.
     """
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or update.effective_chat.id
@@ -342,7 +337,7 @@ def help_command(update, context):
     help_text = (
         "/start — Приветствие\n"
         "/help — Справка по командам\n"
-        "/ask <текст вопроса> — Задать вопрос (двухшаговый режим)\n"
+        "/ask <вопрос> — Задать вопрос (двухшаговый режим)\n"
         "/context — Показать последние 30 сообщений\n"
         "/clear — Очистить контекст\n"
         "/brainstorm — Начать мозговой штурм (выбор персонажа)\n"
