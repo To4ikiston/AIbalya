@@ -21,8 +21,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-APP_URL = os.getenv("APP_URL", "")         # Например: https://aibalya-1.onrender.com
-SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секретный токен для вебхука
+APP_URL = os.getenv("APP_URL", "")         # Например, https://aibalya-1.onrender.com
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секрет для вебхука
 
 # ==================== Инициализация бота и диспетчера ====================
 bot = Bot(token=BOT_TOKEN)
@@ -37,7 +37,7 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     try:
         data = {
             "chat_id": chat_id,
-            "thread_id": thread_id,  # Если темы не используется, можно передавать chat_id
+            "thread_id": thread_id,  # Если тема не используется, можно передавать chat_id
             "user_id": user_id,
             "text": text
         }
@@ -56,7 +56,7 @@ def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
             .limit(limit) \
             .execute()
         rows = res.data or []
-        rows.reverse()
+        rows.reverse()  # от старых к новым
         return [r["text"] for r in rows]
     except Exception as e:
         logger.warning(f"Ошибка получения сообщений: {e}")
@@ -78,7 +78,7 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
     except Exception as e:
         logger.warning(f"Ошибка сохранения истории сессии: {e}")
 
-# ==================== Работа с состоянием персонажей ====================
+# ==================== Функции для работы с состоянием персонажей ====================
 def update_character_state(chat_id: int, character_id: str):
     """
     Обновляет (увеличивает) счетчик призывов персонажа для данного чата.
@@ -166,14 +166,20 @@ awaiting_question = {}  # awaiting_question[chat_id] = True/False
 
 def ask_command(update, context):
     """
-    При вызове /ask бот устанавливает флаг ожидания и просит ввести вопрос отдельным сообщением.
+    При вызове /ask устанавливает флаг ожидания вопроса.
+    Следующее текстовое сообщение будет обработано как вопрос.
     """
     chat_id = update.effective_chat.id
     awaiting_question[chat_id] = True
     update.message.reply_text("Введите свой вопрос отдельным сообщением:")
 
+# ==================== Команда /start ====================
+def start_command(update, context):
+    """Приветствие: отправляет текстовое сообщение (без ReplyKeyboardMarkup)."""
+    update.message.reply_text("Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для списка команд.")
+
 # ==================== Данные о персонажах (Warhammer-стиль) ====================
-# Используем прямые ссылки на MP4 для персонажей.
+# Используем прямые ссылки на MP4 файлы
 WARHAMMER_CHARACTERS = {
     "gradis": {
         "display_name": "ГРАДИС — Архивариус Знания (Эксперт-человек)",
@@ -287,8 +293,7 @@ def active_command(update, context):
 # ==================== Команда /dismiss ====================
 def dismiss_command(update, context):
     """
-    Завершает сессию активного персонажа: подводит итог,
-    сохраняет историю сессии в таблицу conversation_history и сбрасывает активного персонажа.
+    Завершает сессию активного персонажа: подводит итог, сохраняет историю сессии и сбрасывает активного персонажа.
     """
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or update.effective_chat.id
@@ -315,14 +320,10 @@ def dismiss_command(update, context):
         logger.warning(f"Ошибка сохранения истории сессии: {e}")
     del active_characters[chat_id]
 
-# ==================== Автоматический режим для /ask (двухшаговый) ====================
-def ask_command(update, context):
-    """
-    При вызове /ask бот устанавливает флаг ожидания и просит ввести вопрос отдельным сообщением.
-    """
-    chat_id = update.effective_chat.id
-    awaiting_question[chat_id] = True
-    update.message.reply_text("Введите свой вопрос отдельным сообщением:")
+# ==================== Команда /start ====================
+def start_command(update, context):
+    """Приветствие: отправляет текстовое сообщение."""
+    update.message.reply_text("Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для списка команд.")
 
 # ==================== Обработчик текстовых сообщений ====================
 def text_message_handler(update, context):
@@ -362,7 +363,7 @@ def set_webhook():
 
 # ==================== Регистрация обработчиков ====================
 dispatcher.add_handler(CommandHandler("start", start_command))
-dispatcher.add_handler(CommandHandler("help", help_command))
+dispatcher.add_handler(CommandHandler("help", active_command))  # Можно изменить, но оставляем отдельную /help
 dispatcher.add_handler(CommandHandler("ask", ask_command))
 dispatcher.add_handler(CommandHandler("context", lambda update, context: update.message.reply_text(
     "\n".join(get_last_messages_db(update.effective_chat.id, update.message.message_thread_id or update.effective_chat.id, limit=30))
