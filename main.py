@@ -1,303 +1,305 @@
 import os
 import logging
 from flask import Flask, request, jsonify
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+)
 from telegram.ext import (
-    Dispatcher,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    Filters
+    Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
 )
 
-#############################################################################
-# 0. Общая настройка
-#############################################################################
-
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
 app = Flask(__name__)
 
+# Получаем токен бота из переменной окружения BOT_TOKEN
 BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 bot = Bot(token=BOT_TOKEN)
 
-# Создаём Dispatcher с несколькими потоками
+# Создаем Dispatcher с workers=2 для асинхронной обработки
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
-# Хранилище контекста:
-# contexts[chat_id] = {
-#   "messages": [строки],  # список сообщений
-#   "limit": 30            # лимит для хранения
-# }
+#############################################################################
+# 1. Глобальные структуры
+#############################################################################
+
+# Хранение контекста: contexts[chat_id] = [сообщения]
 contexts = {}
 
-#############################################################################
-# 1. Заглушки для API (DeepSeek и т.п.)
-#############################################################################
-
-def call_deepseek_api(question: str, context_messages: list) -> str:
-    """
-    Здесь будет реальный вызов DeepSeek, когда у вас появится ключ.
-    Пока заглушка просто возвращает вопрос + последние 5 сообщений контекста.
-    """
-    last5 = "\n".join(context_messages[-5:])
-    return (
-        f"=== ЗАГЛУШКА DeepSeek ===\n"
-        f"Вопрос: {question}\n\n"
-        f"Последние 5 сообщений:\n{last5}"
-    )
-
-def summarize_context(context_messages: list) -> str:
-    """
-    Заглушка для команды /summarize.
-    Реально вы могли бы вызывать DeepSeek или другую модель для суммирования.
-    Пока делаем примитив.
-    """
-    if not context_messages:
-        return "Контекст пуст, нечего суммировать."
-    # Допустим, просто берём 5 последних и выдаём "итоги"
-    last5 = context_messages[-5:]
-    summary = "\n".join(last5)
-    return (
-        "=== ЗАГЛУШКА ИТОГОВ ===\n"
-        "Вот 5 последних сообщений:\n"
-        f"{summary}\n\n"
-        "Допустим, это краткий обзор."
-    )
-
-#############################################################################
-# 2. Вспомогательные функции для работы с контекстом
-#############################################################################
-
-def get_chat_context(chat_id: int) -> dict:
-    """Возвращает структуру контекста для данного chat_id."""
+def get_context(chat_id: int) -> list:
     if chat_id not in contexts:
-        contexts[chat_id] = {
-            "messages": [],
-            "limit": 30,  # по умолчанию храним 30 последних
-        }
+        contexts[chat_id] = []
     return contexts[chat_id]
 
-def add_message_to_context(chat_id: int, message: str):
-    ctx = get_chat_context(chat_id)
-    ctx["messages"].append(message)
-    # Если превысили лимит — обрезаем начало
-    limit = ctx["limit"]
-    if len(ctx["messages"]) > limit:
-        ctx["messages"] = ctx["messages"][-limit:]
+def add_to_context(chat_id: int, text: str):
+    ctx = get_context(chat_id)
+    ctx.append(text)
+    # Ограничим до 100 сообщений
+    if len(ctx) > 100:
+        contexts[chat_id] = ctx[-100:]
+
+# Хранение активного персонажа: active_sessions[chat_id] = character_id (например, "gradis")
+active_sessions = {}
 
 #############################################################################
-# 3. Обработчики команд
+# 2. Заглушки для вызова API и суммаризации
+#############################################################################
+
+def call_deepseek_api(character_name: str, prompt: str, context_messages: list) -> str:
+    """
+    Заглушка для вызова DeepSeek. Позже сюда будет реальный HTTP-запрос.
+    """
+    last30 = "\n".join(context_messages[-30:]) if context_messages else "Нет сообщений."
+    return (
+        f"=== Ответ от {character_name} ===\n"
+        f"Промт: {prompt}\n\n"
+        f"Контекст (последние 30 сообщений):\n{last30}\n\n"
+        f"(Это заглушка для DeepSeek)"
+    )
+
+def summarize_context(character_name: str, prompt: str, context_messages: list) -> str:
+    """
+    Заглушка для финальной суммаризации перед прощанием.
+    """
+    last30 = "\n".join(context_messages[-30:]) if context_messages else "Нет сообщений."
+    return (
+        f"=== Финальный итог от {character_name} ===\n"
+        f"Промт: {prompt}\n\n"
+        f"Итоговая сводка (последние 30 сообщений):\n{last30}\n\n"
+        f"(Это заглушка для финальной суммаризации)"
+    )
+
+#############################################################################
+# 3. Определение персонажей для мозгового штурма (Warhammer-стиль)
+#############################################################################
+
+# Словарь персонажей: ключ — id, значение — данные
+WARHAMMER_CHARACTERS = {
+    "gradis": {
+        "display_name": "ГРАДИС — Архивариус Знания (Эксперт-человек)",
+        "gif_url": "https://media.giphy.com/media/3o7abB06u9bNzA8lu8/giphy.gif",
+        "description": (
+            "Хранитель догматов Омниссиаха, превращающий опыт в алгоритмы.\n"
+            "Боевой стиль: атакует хаотичные идеи логическими вирусами.\n"
+            "Цитата: «React — это катехизис джуна. Vue.js? Лишь апокриф.»"
+        ),
+        "prompt": (
+            "Анализируй диалог как опытный профессионал. Используй знания Империума IT, атакуй хаос неструктурированного кода."
+        ),
+    },
+    "novaris": {
+        "display_name": "НОВАРИС — Квантовое Видение (Супер ИИ)",
+        "gif_url": "https://media.giphy.com/media/l0MYGjZGHbeFseGdy/giphy.gif",
+        "description": (
+            "ИИ-штамм уровня «Гамма-Псионик», рожденный на Марсе.\n"
+            "Боевой стиль: заражает разум нейросетевым зомби-вирусом.\n"
+            "Цитата: «HR-менеджеры — это глитчи в матрице.»"
+        ),
+        "prompt": (
+            "Генерируй смелые, но реализуемые идеи. Материализуйся в нескольких реальностях и предлагай инновационные решения."
+        ),
+    },
+    "aksios": {
+        "display_name": "АКСИОС — Незыблемый Столп Эффективности (Критик и наставник)",
+        "gif_url": "https://media.giphy.com/media/26gJA1cJmVhBlCbLG/giphy.gif",
+        "description": (
+            "Инквизитор Ордена Оптимус, палач неэффективности.\n"
+            "Боевой стиль: строг, но конструктивен; вызывает синдром импостера.\n"
+            "Цитата: «Ваш спринт — это спринт улитки в смоле.»"
+        ),
+        "prompt": (
+            "Оцени идеи через призму эффективности, указывай на слабые места и предлагай улучшения."
+        ),
+    },
+    "inspectra": {
+        "display_name": "ИНСПЕКТРА — Королева Хаотичного Инсайта (Только идеи)",
+        "gif_url": "https://media.giphy.com/media/3oz8xAFtqoOUUrsh7W/giphy.gif",
+        "description": (
+            "Генетический гибрид, специализирующийся на генерации идей без анализа прошлого.\n"
+            "Боевой стиль: соблазняет жертв идеями-паразитами.\n"
+            "Цитата: «Почему бы не монетизировать страх?»"
+        ),
+        "prompt": (
+            "Генерируй массу идей тезисно, провоцируя мозговой штурм, не анализируя прошлое."
+        ),
+    },
+}
+
+#############################################################################
+# 4. Обработчики базовых команд
 #############################################################################
 
 def start_command(update, context):
-    logging.info("Команда /start вызвана")
+    logging.info("Вызвана /start")
     update.message.reply_text(
-        "Привет! Я ВАЛТОР — ваш бот-помощник. Используйте /help для списка команд."
+        "Привет! Я ВАЛТОР — ваш бот-помощник.\n"
+        "Используйте /help для списка команд."
     )
 
 def help_command(update, context):
-    logging.info("Команда /help вызвана")
+    logging.info("Вызвана /help")
     text = (
         "Доступные команды:\n"
         "/start — приветствие\n"
-        "/help — эта справка\n"
-        "/ask <вопрос> — задать вопрос (заглушка для DeepSeek)\n"
-        "/summarize — подвести итоги последних сообщений\n"
-        "/context — показать весь контекст (по умолчанию, до 30 сообщений)\n"
-        "/context setlimit <число> — изменить лимит хранения\n"
-        "/context remove <номер> — удалить сообщение по индексу\n"
+        "/help — справка по командам\n"
+        "/ask <вопрос> — задать вопрос (ИИ-заглушка)\n"
+        "/context — показать текущий контекст\n"
         "/clear — очистить контекст\n"
-        "/brainstorm — запустить мозговой штурм (ГРАДИС, НОВАРИС, АКСИОС, ИНСПЕКТРА)\n"
+        "/brainstorm — запустить режим мозгового штурма\n"
+        "/active — показать активного персонажа\n"
+        "/dismiss [персонаж] — попрощаться с активным персонажем (подвести итог и выйти)\n"
     )
     update.message.reply_text(text)
 
 def ask_command(update, context):
-    logging.info("Команда /ask вызвана")
+    logging.info("Вызвана /ask")
     chat_id = update.message.chat_id
-    # Текст вопроса
     user_text = update.message.text.replace("/ask", "", 1).strip()
     if not user_text:
-        update.message.reply_text("Пожалуйста, введите вопрос после /ask.")
+        update.message.reply_text("Введите вопрос после /ask.")
         return
-
-    ctx = get_chat_context(chat_id)
-    messages = ctx["messages"]
-
-    # Вызываем заглушку DeepSeek
-    answer = call_deepseek_api(user_text, messages)
-    update.message.reply_text(answer)
-
-def summarize_command(update, context):
-    logging.info("Команда /summarize вызвана")
-    chat_id = update.message.chat_id
-    ctx = get_chat_context(chat_id)
-    messages = ctx["messages"]
-    answer = summarize_context(messages)
-    update.message.reply_text(answer)
+    msgs = get_context(chat_id)
+    # Здесь можно вызвать реальный API, пока заглушка:
+    answer = call_deepseek_api("Вопрос", user_text, msgs)
+    update.message.reply_text(f"Ответ:\n{answer}")
 
 def context_command(update, context):
-    """
-    /context
-    /context setlimit <число>
-    /context remove <номер>
-    """
-    logging.info("Команда /context вызвана")
+    logging.info("Вызвана /context")
     chat_id = update.message.chat_id
-    text = update.message.text.strip()
-    parts = text.split()
-    if len(parts) == 1:
-        # Просто показать контекст
-        show_full_context(update, chat_id)
-        return
-
-    # Есть подкоманда
-    subcmd = parts[1]
-    if subcmd == "setlimit":
-        if len(parts) < 3:
-            update.message.reply_text("Формат: /context setlimit <число>")
-            return
-        try:
-            limit = int(parts[2])
-            ctx = get_chat_context(chat_id)
-            ctx["limit"] = limit
-            # Обрежем, если уже превышаем
-            if len(ctx["messages"]) > limit:
-                ctx["messages"] = ctx["messages"][-limit:]
-            update.message.reply_text(f"Лимит контекста изменён на {limit} сообщений.")
-        except ValueError:
-            update.message.reply_text("Неверный формат числа.")
-    elif subcmd == "remove":
-        if len(parts) < 3:
-            update.message.reply_text("Формат: /context remove <номер>")
-            return
-        try:
-            index_str = parts[2]
-            index_to_remove = int(index_str)
-            ctx = get_chat_context(chat_id)
-            if 1 <= index_to_remove <= len(ctx["messages"]):
-                removed_msg = ctx["messages"].pop(index_to_remove - 1)
-                update.message.reply_text(f"Удалено: {removed_msg}")
-            else:
-                update.message.reply_text("Номер сообщения вне диапазона.")
-        except ValueError:
-            update.message.reply_text("Неверный формат номера.")
-    else:
-        update.message.reply_text("Неизвестная подкоманда для /context.")
-
-def show_full_context(update, chat_id: int):
-    """Помощник для вывода полного списка сообщений."""
-    ctx = get_chat_context(chat_id)
-    messages = ctx["messages"]
-    if not messages:
+    msgs = get_context(chat_id)
+    if not msgs:
         update.message.reply_text("Контекст пуст.")
         return
-    lines = []
-    for i, msg in enumerate(messages, start=1):
-        lines.append(f"{i}. {msg}")
-    text = "\n".join(lines)
+    text = "\n".join(f"{i+1}. {m}" for i, m in enumerate(msgs))
     update.message.reply_text(text)
 
 def clear_command(update, context):
-    logging.info("Команда /clear вызвана")
+    logging.info("Вызвана /clear")
     chat_id = update.message.chat_id
-    contexts[chat_id] = {
-        "messages": [],
-        "limit": 30
-    }
+    contexts[chat_id] = []
     update.message.reply_text("Контекст очищен.")
 
 #############################################################################
-# 4. Мозговой штурм (brainstorm)
+# 5. Обработчики для мозгового штурма и активной сессии
 #############################################################################
 
-BRAINSTORM_ROLES = {
-    "gradis": {
-        "name": "ГРАДИС",
-        "prompt": "Градис анализирует диалог как опытный профессионал..."
-    },
-    "novaris": {
-        "name": "НОВАРИС",
-        "prompt": "Новарис мыслит за пределами шаблонов..."
-    },
-    "aksios": {
-        "name": "АКСИОС",
-        "prompt": "Аксиос оценивает идеи через призму эффективности..."
-    },
-    "inspectra": {
-        "name": "ИНСПЕКТРА",
-        "prompt": "Инспектра фокусируется на генерации идей без анализа прошлого..."
-    }
-}
-
+# Команда /brainstorm – выводит меню выбора персонажа
 def brainstorm_command(update, context):
-    logging.info("Команда /brainstorm вызвана")
+    logging.info("Вызвана /brainstorm")
     keyboard = [
-        [InlineKeyboardButton("ГРАДИС", callback_data="brainstorm_gradis")],
-        [InlineKeyboardButton("НОВАРИС", callback_data="brainstorm_novaris")],
-        [InlineKeyboardButton("АКСИОС", callback_data="brainstorm_aksios")],
-        [InlineKeyboardButton("ИНСПЕКТРА", callback_data="brainstorm_inspectra")]
+        [InlineKeyboardButton("ГРАДИС", callback_data="select_gradis"),
+         InlineKeyboardButton("НОВАРИС", callback_data="select_novaris")],
+        [InlineKeyboardButton("АКСИОС", callback_data="select_aksios"),
+         InlineKeyboardButton("ИНСПЕКТРА", callback_data="select_inspectra")]
     ]
     markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Выберите вариант мозгового штурма:", reply_markup=markup)
+    update.message.reply_text("Выберите персонажа для мозгового штурма:", reply_markup=markup)
 
+# Обработчик inline-кнопок для выбора персонажа и призыва
 def button_callback(update, context):
     query = update.callback_query
     query.answer()
     data = query.data
-    logging.info(f"Нажата inline-кнопка: {data}")
+    chat_id = query.message.chat_id
 
-    if data.startswith("brainstorm_"):
-        role_key = data.replace("brainstorm_", "")
-        role_info = BRAINSTORM_ROLES.get(role_key)
-        if not role_info:
-            query.edit_message_text("Ошибка: роль не найдена.")
+    # Если пользователь выбрал персонажа
+    if data.startswith("select_"):
+        char_id = data.replace("select_", "")
+        char = WARHAMMER_CHARACTERS.get(char_id)
+        if not char:
+            query.edit_message_text("Ошибка: персонаж не найден.")
             return
-
-        chat_id = query.message.chat_id
-        ctx = get_chat_context(chat_id)
-        last_msgs = ctx["messages"][-5:]
-        text = (
-            f"{role_info['name']} отвечает!\n"
-            f"Промт: {role_info['prompt']}\n\n"
-            f"Последние 5 сообщений:\n{'\n'.join(last_msgs)}"
+        # Отправляем сообщение с GIF, описанием и кнопкой "Призвать"
+        summon_button = InlineKeyboardButton("Призвать", callback_data=f"summon_{char_id}")
+        markup = InlineKeyboardMarkup([[summon_button]])
+        # Не удаляем предыдущее сообщение, чтобы сохранить историю выбора
+        bot.send_animation(
+            chat_id=chat_id,
+            animation=char["gif_url"],
+            caption=f"*{char['display_name']}*\n\n{char['description']}",
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=markup
         )
-        query.edit_message_text(text)
+    # Если нажата кнопка "Призвать"
+    elif data.startswith("summon_"):
+        char_id = data.replace("summon_", "")
+        char = WARHAMMER_CHARACTERS.get(char_id)
+        if not char:
+            query.edit_message_text("Ошибка: персонаж не найден.")
+            return
+        # Устанавливаем активную сессию для чата
+        active_sessions[chat_id] = char_id
+        bot.send_message(
+            chat_id=chat_id,
+            text=f"Персонаж *{char['display_name']}* призван и теперь активен как собеседник!",
+            parse_mode=ParseMode.MARKDOWN
+        )
+    # Для других callback, если понадобятся
+    else:
+        query.message.reply_text("Неизвестная команда кнопки.")
+
+# Команда /active – показывает, какой персонаж сейчас активен
+def active_command(update, context):
+    chat_id = update.message.chat_id
+    if chat_id in active_sessions:
+        char_id = active_sessions[chat_id]
+        char = WARHAMMER_CHARACTERS.get(char_id)
+        update.message.reply_text(f"Сейчас активен: *{char['display_name']}*", parse_mode=ParseMode.MARKDOWN)
+    else:
+        update.message.reply_text("Нет активного персонажа.")
+
+# Команда /dismiss – прощание с активным персонажем (подведение итогов)
+def dismiss_command(update, context):
+    chat_id = update.message.chat_id
+    if chat_id not in active_sessions:
+        update.message.reply_text("Нет активного персонажа, чтобы попрощаться.")
+        return
+    char_id = active_sessions[chat_id]
+    char = WARHAMMER_CHARACTERS.get(char_id)
+    msgs = get_context(chat_id)
+    summary = summarize_context(char["display_name"], char["prompt"], msgs)
+    update.message.reply_text(
+        f"Прощаемся с *{char['display_name']}*.\n{summary}",
+        parse_mode=ParseMode.MARKDOWN
+    )
+    # Удаляем активную сессию
+    del active_sessions[chat_id]
 
 #############################################################################
-# 5. Обработчик обычных сообщений (не команд)
+# 6. Обработчик обычных текстовых сообщений (добавляем в контекст)
 #############################################################################
 
 def text_handler(update, context):
     chat_id = update.message.chat_id
     text = update.message.text
-    logging.info(f"Обычный текст от пользователя: {text}")
-    # Сохраняем в контексте
-    add_message_to_context(chat_id, text)
-
-    # Для наглядности бот отвечает, что добавил сообщение
-    update.message.reply_text("Сообщение добавлено в контекст.")
+    add_to_context(chat_id, text)
+    # Если упомянут бот, можно добавить краткий ответ
+    if "ВАЛТОР" in text.upper() or "@VALTOR" in text.upper():
+        update.message.reply_text("Вы позвали меня? Используйте /ask или /brainstorm.")
 
 #############################################################################
-# 6. Регистрация команд и запуск
+# 7. Регистрация обработчиков в Dispatcher
 #############################################################################
 
-# Регистрируем команды
 dispatcher.add_handler(CommandHandler("start", start_command))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("ask", ask_command))
-dispatcher.add_handler(CommandHandler("summarize", summarize_command))
 dispatcher.add_handler(CommandHandler("context", context_command))
 dispatcher.add_handler(CommandHandler("clear", clear_command))
 dispatcher.add_handler(CommandHandler("brainstorm", brainstorm_command))
+dispatcher.add_handler(CommandHandler("active", active_command))
+dispatcher.add_handler(CommandHandler("dismiss", dismiss_command))
 dispatcher.add_handler(CallbackQueryHandler(button_callback))
-
-# Регистрируем обработчик обычного текста
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, text_handler))
+
+#############################################################################
+# 8. Flask endpoints для вебхука
+#############################################################################
 
 @app.route("/")
 def index():
-    return "ВАЛТОР запущен и работает!"
+    return "Бот ВАЛТОР работает!"
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook():
