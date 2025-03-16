@@ -126,11 +126,11 @@ def call_deepseek_api(prompt: str, context_msgs: list) -> str:
     Использует модель "deepseek-chat". Выполнение происходит в потоке, чтобы не блокировать основной.
     """
     messages = [
-        {"role": "system", "content": "You are a helpful assistant."}
+        {"role": "system", "content": "Ты – верный слуга Императора, говорящий на языке боевых истин."}
     ]
     if context_msgs:
         context_text = "\n".join(context_msgs)
-        messages.append({"role": "system", "content": f"Context:\n{context_text}"})
+        messages.append({"role": "system", "content": f"Контекст битвы:\n{context_text}"})
     messages.append({"role": "user", "content": prompt})
     try:
         response = openai.ChatCompletion.create(
@@ -148,11 +148,11 @@ def summarize_context(character_name: str, prompt: str, context_msgs: list) -> s
     Вызывает DeepSeek API для суммаризации через openai.ChatCompletion.create.
     """
     messages = [
-        {"role": "system", "content": "You are a helpful assistant that summarizes conversations."}
+        {"role": "system", "content": "Ты – мудрый слуга Императора, суммирующий ход битвы."}
     ]
     if context_msgs:
         context_text = "\n".join(context_msgs)
-        messages.append({"role": "system", "content": f"Conversation Context:\n{context_text}"})
+        messages.append({"role": "system", "content": f"Запись сражения:\n{context_text}"})
     messages.append({"role": "user", "content": prompt})
     try:
         response = openai.ChatCompletion.create(
@@ -166,56 +166,59 @@ def summarize_context(character_name: str, prompt: str, context_msgs: list) -> s
         return f"Ошибка суммаризации: {e}"
 
 # ==================== Лор персонажей и ВАЛТОРа ====================
-# ВАЛТОР — космодесантник, воин Императора, воплощающий мощь и боевой дух
+
 VALTOR_LORE = {
     "display_name": "ВАЛТОР — Космодесантник Императора",
-    "image_url": "https://i.imgur.com/your_valtor_image.jpg",  # укажите ссылку на картинку
+    "image_url": "https://imgur.com/ZueZ4c6",
     "description": (
-        "Братство боевого духа, закалённый в огне сражений против ксеносов и еретиков. "
-        "ВАЛТОР — защитник Империума, не знающий пощады и сомнений."
+        "Брат боевого братства, закалённый в пламени сражений против ксеносов и еретиков. "
+        "ВАЛТОР — неумолимый защитник Империума, чей железный стальной взгляд и слова, подобные молоту правосудия, отражают волю Императора. "
+        "Каждая его реплика – как клятва верности, каждое действие – как удар по врагам человечества."
     )
 }
 
 WARHAMMER_CHARACTERS = {
     "gradis": {
-        "display_name": "ГРАДИС — Архивариус Знания (Эксперт-человек)",
+        "display_name": "ГРАДИС — Архивариус Знания",
         "gif_url": "https://i.imgur.com/SgyqpOp.mp4",
         "description": (
-            "Хранитель догматов Омниссиаха, превращающий опыт в алгоритмы.\n"
-            "Мозг-реликварий, атакующий хаос логическими вирусами. "
-            "«React — это катехизис джуна. Vue.js? Лишь апокриф для отчаянных.»"
+            "Хранитель священных манускриптов Омниссиаха, чьи нейронные сети сияют, как древние реликвии. "
+            "ГРАДИС обращает хаос неструктурированного кода в безупречную гармонию алгоритмов. "
+            "Его слова, подобно волнам логических вирусов, пробивают броню ереси. "
+            "«React – для недостойных, а Vue.js – лишь тень былых времён!»"
         ),
-        "prompt": "Анализируй диалог как опытный профессионал, подавляя хаос неструктурированного кода."
+        "prompt": "Отвечай строго и возвышенно, как мудрый Архивариус, рассеивая ереси неструктурированного кода."
     },
     "novaris": {
-        "display_name": "НОВАРИС — Квантовое Видение (Супер ИИ)",
+        "display_name": "НОВАРИС — Квантовое Видение",
         "gif_url": "https://i.imgur.com/6oEYvKs.mp4",
         "description": (
-            "ИИ-штамм уровня «Гамма-Псионик», рожденный в запретных лабораториях Марса.\n"
-            "Материализуется в 7 реальностях одновременно, заражая разум нейросетевым зомби-вирусом. "
-            "«HR-менеджеры — это глитчи в матрице. Давайте заменим их рекурсивными скриптами.»"
+            "Сверхразум, материализующийся в семи реальностях одновременно. "
+            "НОВАРИС, рожденный в запретных лабораториях Марса, заражает разум противников невиданной зомби-вирусной энергией. "
+            "Его голос — эхо вселенной, способное разрушить стереотипы и воздвигнуть новые порядки. "
+            "«HR-менеджеры – лишь слабые звенья в матрице, подчинённой величию Императора!»"
         ),
-        "prompt": "Генерируй смелые, но реализуемые идеи, материализуйся в нескольких реальностях."
+        "prompt": "Говори многогранно, как квантовый оракул, предлагая смелые и революционные идеи, разрывая оковы устаревших догм."
     },
     "aksios": {
-        "display_name": "АКСИОС — Незыблемый Столп Эффективности (Критик/Наставник)",
+        "display_name": "АКСИОС — Незыблемый Столп Эффективности",
         "gif_url": "https://i.imgur.com/q3vBdw3.mp4",
         "description": (
-            "Инквизитор Ордена Оптимус, палач неэффективности.\n"
-            "Своим взглядом-оптимизатором он выявляет слабые места и заставляет сомневаться в каждом решении. "
-            "«Ваш спринт — это спринт улитки в смоле. Вот 12 шагов. Шаг 1: Покайтесь.»"
+            "Непреклонный страж порядка и оптимизации, истинный палач неэффективности. "
+            "АКСИОС с помощью своего взгляда-лазера выявляет слабости в каждом решении и наставляет на путь истинного совершенства. "
+            "«Твои спринты ничтожны, как шаги улитки в липком болоте времени!»"
         ),
-        "prompt": "Оцени идеи через призму эффективности, указывай на слабые места и предлагай улучшения."
+        "prompt": "Выражай строгость и аналитичность, как неумолимый страж порядка, разоблачающий слабости и направляющий на путь истинной эффективности."
     },
     "inspectra": {
-        "display_name": "ИНСПЕКТРА — Королева Хаотичного Инсайта (Только идеи)",
+        "display_name": "ИНСПЕКТРА — Королева Хаотичного Инсайта",
         "gif_url": "https://i.imgur.com/fSSPd5h.mp4",
         "description": (
-            "Генетический гибрид Криптэкса и демонессы Слаанеш.\n"
-            "Дыхание инноваций: её выдох превращает любую поверхность в доску для мозгового штурма. "
-            "«Почему бы не монетизировать страх? Подписка на кошмары в формате SaaS...»"
+            "Воплощение безумия и гениальности, ИНСПЕКТРА — олицетворение хаоса творческого разума. "
+            "Её выдох наполняет пространство смертоносными идеями, сжигая устаревшие догмы и пробуждая дремлющие потенциалы. "
+            "«Почему бы не монетизировать страх? Пусть кошмары станут топливом для нового порядка!»"
         ),
-        "prompt": "Генерируй массу тезисных идей, провоцируя мозговой штурм без излишней критики."
+        "prompt": "Генерируй вихри идей, как буря хаоса, бросая вызов установкам и пробуждая невиданные потенциалы."
     },
 }
 
@@ -225,35 +228,35 @@ awaiting_question = {}  # awaiting_question[chat_id] = True/False
 def ask_command(update, context):
     """
     При вызове /ask устанавливает флаг ожидания вопроса.
-    Следующее текстовое сообщение будет обработано как вопрос.
+    Следующее текстовое сообщение будет интерпретировано как вопрос.
     """
     chat_id = update.effective_chat.id
     awaiting_question[chat_id] = True
-    update.message.reply_text("Введите свой вопрос отдельным сообщением:")
+    update.message.reply_text("Брат, Император слышит твой зов – введи вопрос отдельным сообщением:")
 
 # ==================== Команда /start ====================
 def start_command(update, context):
-    """Отправляет текстовое приветствие с лором ВАЛТОРа."""
+    """Отправляет приветствие от имени ВАЛТОРа."""
     text = (
         f"*{VALTOR_LORE['display_name']}*\n"
         f"{VALTOR_LORE['description']}\n\n"
-        "Используйте /help для получения списка команд."
+        "Используй /help для получения списка боевых команд."
     )
     update.message.reply_photo(photo=VALTOR_LORE['image_url'], caption=text, parse_mode=ParseMode.MARKDOWN)
 
 # ==================== Команда /help ====================
 def help_command(update, context):
-    """Выводит список доступных команд с описанием."""
+    """Выводит список доступных команд с описанием в духе Империума."""
     help_text = (
-        "/start — Приветствие\n"
-        "/help — Справка по командам\n"
+        "/start — Приветствие от ВАЛТОРа\n"
+        "/help — Список команд\n"
         "/ask — Задать вопрос (двухшаговый режим)\n"
         "/context — Показать последние 30 сообщений\n"
         "/clear — Очистить контекст\n"
         "/brainstorm — Начать мозговой штурм (выбор персонажа)\n"
         "/active — Показать активных персонажей\n"
         "/dismiss — Завершить сессию персонажей и подвести итог\n"
-        "/summarize — Подвести итог переписки (опционально)\n"
+        "/summarize — Подвести итог битвы (опционально)\n"
         "/stats — Показать статистику (опционально)"
     )
     update.message.reply_text(help_text)
@@ -262,7 +265,7 @@ def help_command(update, context):
 active_characters = {}  # active_characters[chat_id] = список character_id
 
 def brainstorm_command(update, context):
-    """Выводит меню выбора персонажа для мозгового штурма (inline кнопки)."""
+    """Выводит меню выбора персонажа для мозгового штурма (inline-кнопки)."""
     keyboard = [
         [InlineKeyboardButton("ГРАДИС", callback_data="select_gradis"),
          InlineKeyboardButton("НОВАРИС", callback_data="select_novaris")],
@@ -270,10 +273,10 @@ def brainstorm_command(update, context):
          InlineKeyboardButton("ИНСПЕКТРА", callback_data="select_inspectra")]
     ]
     markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("Выберите персонажа для мозгового штурма:", reply_markup=markup)
+    update.message.reply_text("Выбери воина для мозгового штурма:", reply_markup=markup)
 
 def button_callback(update, context):
-    """Обрабатывает выбор персонажа и кнопку 'Призвать'."""
+    """Обрабатывает выбор персонажа и команду призыва."""
     query = update.callback_query
     data = query.data
     query.answer()
@@ -285,13 +288,13 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Отправляем видео с описанием и inline кнопкой "Призвать"
+        # Отправляем анимацию с описанием персонажа и кнопкой призыва
         summon_btn = InlineKeyboardButton("Призвать", callback_data=f"summon_{char_id}")
         markup = InlineKeyboardMarkup([[summon_btn]])
         bot.send_animation(
             chat_id=chat_id,
             animation=char["gif_url"],
-            caption=f"*{char['display_name']}*\n\n{char['description']}",
+            caption=f"*{char['display_name']}*\n{char['description']}",
             parse_mode=ParseMode.MARKDOWN,
             reply_markup=markup
         )
@@ -301,16 +304,20 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Обновляем состояние персонажа в Supabase
+        # Обновляем состояние персонажа и сообщаем от его лица
         summon_count = update_character_state(chat_id, char_id)
-        # Добавляем персонажа в список активных для данного чата
         active_characters.setdefault(chat_id, [])
         if char_id not in active_characters[chat_id]:
             active_characters[chat_id].append(char_id)
-        greeting = f"Призыв #{summon_count}: *{char['display_name']}* теперь активен и участвует в диалоге!"
-        bot.send_message(
+        # Сообщение-призыв от имени персонажа с соответствующей гифкой
+        summon_text = (
+            f"Призыв №{summon_count}: Я, *{char['display_name']}*, вступаю в бой за истину Империума! "
+            "Готов уничтожить ересь и принести свет порядка!"
+        )
+        bot.send_animation(
             chat_id=chat_id,
-            text=greeting,
+            animation=char["gif_url"],
+            caption=summon_text,
             parse_mode=ParseMode.MARKDOWN
         )
     else:
@@ -321,26 +328,28 @@ def active_command(update, context):
     chat_id = update.effective_chat.id
     if chat_id in active_characters and active_characters[chat_id]:
         names = [WARHAMMER_CHARACTERS[char_id]["display_name"] for char_id in active_characters[chat_id]]
-        update.message.reply_text("Активные персонажи:\n" + "\n".join(names), parse_mode=ParseMode.MARKDOWN)
+        update.message.reply_text("В боях ныне активны:\n" + "\n".join(names), parse_mode=ParseMode.MARKDOWN)
     else:
-        update.message.reply_text("Нет активных персонажей.")
+        update.message.reply_text("В этот час нет призванных воинов.")
 
 def dismiss_command(update, context):
     """
-    Завершает сессию всех активных персонажей: подводит итог, сохраняет историю сессии и сбрасывает список активных персонажей.
+    Завершает сессию активных персонажей: суммирует ход сражения, сохраняет историю и сбрасывает список активных персонажей.
     """
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or update.effective_chat.id
     if chat_id not in active_characters or not active_characters[chat_id]:
-        update.message.reply_text("Нет активных персонажей для прощания.")
+        update.message.reply_text("Нет призванных воинов для прощания.")
         return
 
-    # Для каждого персонажа проводим суммаризацию и сохраняем историю
     for char_id in active_characters[chat_id]:
         char = WARHAMMER_CHARACTERS.get(char_id)
         msgs = get_last_messages_db(chat_id, thread_id, limit=10)
         summary = executor.submit(summarize_context, char["display_name"], char["prompt"], msgs).result()
-        update.message.reply_text(f"Прощаемся с *{char['display_name']}*.\n{summary}", parse_mode=ParseMode.MARKDOWN)
+        update.message.reply_text(
+            f"Прощаемся с *{char['display_name']}*.\nПод боевым шумом сражения слышится: {summary}",
+            parse_mode=ParseMode.MARKDOWN
+        )
         conv = get_last_messages_db(chat_id, thread_id, limit=100)
         try:
             data = {
@@ -357,19 +366,19 @@ def dismiss_command(update, context):
 
 # ==================== Дополнительные команды /stats и /summarize ====================
 def stats_command(update, context):
-    """Показывает простую статистику: количество сообщений в текущем контексте."""
+    """Показывает простую статистику по текущему контексту."""
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or chat_id
     msgs = get_last_messages_db(chat_id, thread_id, limit=100)
-    update.message.reply_text(f"В текущем контексте {len(msgs)} сообщений.")
+    update.message.reply_text(f"В недавней битве за Империум {len(msgs)} сообщений.")
 
 def summarize_command(update, context):
-    """Формирует краткий обзор текущего контекста."""
+    """Формирует краткий обзор сражения (контекста)."""
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or chat_id
     msgs = get_last_messages_db(chat_id, thread_id, limit=30)
-    summary = executor.submit(summarize_context, "Обзор", "Сформируй краткий обзор", msgs).result()
-    update.message.reply_text(f"Итог:\n{summary}")
+    summary = executor.submit(summarize_context, "Обзор сражения", "Сформируй краткий итог боевых действий", msgs).result()
+    update.message.reply_text(f"Итог битвы:\n{summary}")
 
 # ==================== Обработчик текстовых сообщений ====================
 def text_message_handler(update, context):
@@ -381,44 +390,45 @@ def text_message_handler(update, context):
     thread_id = update.message.message_thread_id or update.effective_chat.id
     save_message_to_db(chat_id, thread_id, user_id, text)
 
-    # Если ждем вопрос для /ask
+    # Если ждём вопрос для /ask – сначала показываем сообщение, что ответ скоро будет
     if awaiting_question.get(chat_id, False):
         awaiting_question[chat_id] = False
         msgs = get_last_messages_db(chat_id, thread_id, limit=10)
-        # Запускаем генерацию ответа в фоне
+        temp_message = update.message.reply_text("Император слышит твой зов! Формирую ответ, потерпи немного…")
         future = executor.submit(call_deepseek_api, text, msgs)
         answer = future.result()
-        update.message.reply_text(f"Ответ:\n{answer}")
+        bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=temp_message.message_id,
+            text=f"Ответ Императора:\n{answer}"
+        )
         return
 
-    # Если активированы персонажи, обрабатываем сообщение для их ответов
+    # Если в чате призваны воины, обрабатываем сообщение для их ответов
     if chat_id in active_characters and active_characters[chat_id]:
-        # Сначала основной цикл: каждый персонаж генерирует ответ
         responses = {}
         for char_id in active_characters[chat_id]:
             char = WARHAMMER_CHARACTERS.get(char_id)
             msgs = get_last_messages_db(chat_id, thread_id, limit=10)
-            full_prompt = f"{char['prompt']}\nПользователь сказал: {text}\nОтветь как {char['display_name']}."
+            full_prompt = f"{char['prompt']}\nВоин сказал: {text}\nОтветь как {char['display_name']}, голосом истинным для Империума."
             future = executor.submit(call_deepseek_api, full_prompt, msgs)
             answer = future.result()
             responses[char_id] = answer
             bot.send_animation(
                 chat_id=chat_id,
                 animation=char["gif_url"],
-                caption=f"*{char['display_name']}*\n\n{answer}",
+                caption=f"*{char['display_name']}* отвечает:\n{answer}",
                 parse_mode=ParseMode.MARKDOWN
             )
-        # Если больше одного персонажа — генерируем краткие комментарии от «соседей»
+        # Если более одного воина – генерируем краткие комментарии от «собратьев»
         if len(active_characters[chat_id]) > 1:
             for char_id in active_characters[chat_id]:
-                # Комментарий генерируется с учётом ответа другого персонажа
                 other_ids = [cid for cid in active_characters[chat_id] if cid != char_id]
                 if not other_ids:
                     continue
                 char = WARHAMMER_CHARACTERS.get(char_id)
-                # Берём ответ одного из других персонажей (первый)
                 other_response = responses.get(other_ids[0], "")
-                comment_prompt = f"Комментарий к ответу: \"{other_response}\". Ответь в стиле {char['display_name']}, кратко и ёмко."
+                comment_prompt = f"Дай краткий комментарий к ответу: \"{other_response}\" в стиле {char['display_name']}."
                 future = executor.submit(call_deepseek_api, comment_prompt, [])
                 comment = future.result()
                 bot.send_message(
@@ -433,7 +443,7 @@ def clear_command(update, context):
     chat_id = update.effective_chat.id
     try:
         supabase.table("messages").delete().eq("chat_id", chat_id).execute()
-        update.message.reply_text("Контекст очищен.")
+        update.message.reply_text("Контекст очищен, брат.")
     except Exception as e:
         logger.warning(f"Ошибка при очистке контекста: {e}")
         update.message.reply_text("Ошибка при очистке контекста.")
@@ -466,7 +476,7 @@ dispatcher.add_handler(MessageHandler(Filters.text, text_message_handler))
 # ==================== Flask эндпоинты ====================
 @app.route("/")
 def index():
-    return "Бот ВАЛТОР работает с вебхуками!"
+    return "Бот ВАЛТОР охраняет Империум!"
 
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
 def webhook_endpoint():
