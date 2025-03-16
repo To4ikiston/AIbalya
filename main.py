@@ -8,36 +8,36 @@ from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, Pa
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
 from supabase import create_client, Client
 
-# ==================== Настройка логирования ====================
+# --- Настройка логирования ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ==================== Инициализация Flask приложения ====================
+# --- Инициализация Flask приложения ---
 app = Flask(__name__)
 
-# ==================== Получение переменных окружения ====================
+# --- Получение переменных окружения ---
 BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-APP_URL = os.getenv("APP_URL", "")  # Например, https://your-app.onrender.com
+APP_URL = os.getenv("APP_URL", "")  # Пример: https://your-app.onrender.com
 SECRET_TOKEN = os.getenv("SECRET_TOKEN", "")
 
-# ==================== Инициализация бота и диспетчера ====================
+# --- Инициализация бота и диспетчера ---
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=4, use_context=True)
 
-# ==================== Настройка DeepSeek через openai ====================
+# --- Настройка DeepSeek ---
 openai.api_key = DEEPSEEK_API_KEY
 openai.api_base = "https://api.deepseek.com"
 
-# ==================== Подключение к Supabase ====================
+# --- Подключение к Supabase ---
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ==================== ThreadPoolExecutor для фоновых задач ====================
+# --- Executor для фоновых задач ---
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ==================== Функция экранирования для MarkdownV2 ====================
+# --- Функция экранирования для MarkdownV2 ---
 def escape_md_v2(text: str) -> str:
     escape_chars = r'_*[]()~`>#+-=|{}.!'
     escaped = ""
@@ -48,27 +48,27 @@ def escape_md_v2(text: str) -> str:
             escaped += char
     return escaped
 
-# ==================== Функции работы с базой данных ====================
+# --- Функции работы с базой данных ---
 def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     try:
         data = {"chat_id": chat_id, "thread_id": thread_id, "user_id": user_id, "text": text}
         supabase.table("messages").insert(data).execute()
     except Exception as e:
-        logger.warning(f"Ошибка записи в DB: {e}")
+        logger.warning(f"DB insert error: {e}")
 
 def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
     try:
-        res = supabase.table("messages") \
-            .select("text") \
-            .eq("chat_id", chat_id) \
-            .eq("thread_id", thread_id) \
-            .order("timestamp", desc=True) \
+        res = supabase.table("messages")\
+            .select("text")\
+            .eq("chat_id", chat_id)\
+            .eq("thread_id", thread_id)\
+            .order("timestamp", desc=True)\
             .limit(limit).execute()
         rows = res.data or []
         rows.reverse()
         return [r["text"] for r in rows]
     except Exception as e:
-        logger.warning(f"Ошибка получения сообщений: {e}")
+        logger.warning(f"DB select error: {e}")
         return []
 
 def save_conversation_history(chat_id: int, thread_id: int, active_character: str, conversation: list):
@@ -78,15 +78,15 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
             "session_end": "now()"}
     try:
         supabase.table("conversation_history").insert(data).execute()
-        logger.info("История сессии сохранена успешно.")
+        logger.info("Conversation history saved.")
     except Exception as e:
-        logger.warning(f"Ошибка сохранения истории сессии: {e}")
+        logger.warning(f"History save error: {e}")
 
 def update_character_state(chat_id: int, character_id: str):
     try:
-        res = supabase.table("characters_state") \
-            .select("*") \
-            .eq("chat_id", chat_id) \
+        res = supabase.table("characters_state")\
+            .select("*")\
+            .eq("chat_id", chat_id)\
             .eq("character_id", character_id).execute()
         rows = res.data or []
         if not rows:
@@ -99,10 +99,10 @@ def update_character_state(chat_id: int, character_id: str):
             supabase.table("characters_state").update({"summon_count": new_count}).eq("id", row["id"]).execute()
             return new_count
     except Exception as e:
-        logger.warning(f"Ошибка обновления состояния персонажа: {e}")
+        logger.warning(f"State update error: {e}")
         return 1
 
-# ==================== Потоковая генерация через DeepSeek API ====================
+# --- Потоковая генерация через DeepSeek API ---
 def stream_deepseek_api(prompt: str, context_msgs: list):
     messages = [{"role": "system", "content": "Ты – верный слуга Императора, говорящий на языке боевых истин."}]
     if context_msgs:
@@ -123,13 +123,12 @@ def stream_deepseek_api(prompt: str, context_msgs: list):
                 delta = chunk['choices'][0].get('delta', {})
                 text_chunk = delta.get('content', '')
                 full_text += text_chunk
-                current_time = time.time()
-                if current_time - last_update >= 1:
+                if time.time() - last_update >= 1:
                     yield escape_md_v2(full_text)
-                    last_update = current_time
+                    last_update = time.time()
         yield escape_md_v2(full_text)
     except Exception as e:
-        logger.error(f"DeepSeek API streaming error: {e}")
+        logger.error(f"DeepSeek streaming error: {e}")
         yield escape_md_v2(f"Ошибка DeepSeek: {e}")
 
 def stream_summarize(character_name: str, prompt: str, context_msgs: list):
@@ -152,23 +151,22 @@ def stream_summarize(character_name: str, prompt: str, context_msgs: list):
                 delta = chunk['choices'][0].get('delta', {})
                 text_chunk = delta.get('content', '')
                 full_text += text_chunk
-                current_time = time.time()
-                if current_time - last_update >= 1:
+                if time.time() - last_update >= 1:
                     yield escape_md_v2(full_text)
-                    last_update = current_time
+                    last_update = time.time()
         yield escape_md_v2(full_text)
     except Exception as e:
-        logger.error(f"DeepSeek Summarize streaming error: {e}")
+        logger.error(f"Summarize streaming error: {e}")
         yield escape_md_v2(f"Ошибка суммаризации: {e}")
 
-# ==================== Лор персонажей и ВАЛТОРа ====================
+# --- Лор персонажей и ВАЛТОРа ---
 VALTOR_LORE = {
     "display_name": "ВАЛТОР — Космодесантник Императора",
     "image_url": "https://imgur.com/ZueZ4c6",  # Фото ВАЛТОРа
     "description": (
         "Брат Империума, закалённый в пламени бесконечных сражений с ксеносами и еретиками. "
         "ВАЛТОР – непоколебимый защитник, чей стальной взгляд пробивает тьму хаоса, а его слова – как молоты правосудия. "
-        "Он ведёт своих братьев к свету Императора. Для подробностей нажми *\\/help*."
+        "Он ведёт своих братьев к свету Императора. Для подробностей нажми */help*."
     )
 }
 
@@ -195,7 +193,7 @@ WARHAMMER_CHARACTERS = {
         "display_name": "АКСИОС — Незыблемый Столп Эффективности",
         "gif_url": "https://i.imgur.com/q3vBdw3.mp4",
         "description": (
-            "Непреклонный страж порядка, палач неэффективности. Его взгляд – молот правосудия, разоблачающий слабости, "
+            "Непреклонный страж порядка, палач неэффективности. Его взгляд – как молот правосудия, разоблачающий слабости, "
             "а его слова направляют воинов к совершенству. Услышь его строгость!"
         ),
         "prompt": "Излагай с безжалостной строгостью, разоблачая слабости и направляя воинов к совершенству."
@@ -214,10 +212,10 @@ WARHAMMER_CHARACTERS = {
 # Дополнительная анимация для выбора персонажа для мозгового штурма
 BRAINSTORM_ANIMATION_URL = "https://i.imgur.com/yAQ8BWC.gif"
 
-# ==================== Механизм ожидания вопросов ====================
+# --- Механизм ожидания вопросов ---
 awaiting_question = {}  # awaiting_question[chat_id] = True/False
 
-# ==================== Команда /ask ====================
+# --- Команда /ask ---
 def ask_command(update, context):
     chat_id = update.effective_chat.id
     awaiting_question[chat_id] = True
@@ -226,7 +224,7 @@ def ask_command(update, context):
         parse_mode=ParseMode.MARKDOWN_V2
     )
 
-# ==================== Команда /start ====================
+# --- Команда /start ---
 def start_command(update, context):
     chat_id = update.effective_chat.id
     prompt = (
@@ -235,7 +233,7 @@ def start_command(update, context):
     )
     temp_msg = update.message.reply_photo(
         photo=VALTOR_LORE['image_url'],
-        caption="*Брат, Император уже зовёт!*\nДля подробностей нажми *\\/help*.",
+        caption="*Брат, Император уже зовёт!*\nДля подробностей нажми */help*.",
         parse_mode=ParseMode.MARKDOWN_V2
     )
     for generated in stream_deepseek_api(prompt, []):
@@ -251,7 +249,7 @@ def start_command(update, context):
                 logger.warning(f"Ошибка редактирования приветствия: {e}")
                 time.sleep(1)
 
-# ==================== Команда /help ====================
+# --- Команда /help ---
 def help_command(update, context):
     chat_id = update.effective_chat.id
     prompt = (
@@ -275,7 +273,7 @@ def help_command(update, context):
                 logger.warning(f"Ошибка редактирования /help: {e}")
                 time.sleep(1)
 
-# ==================== Команды мозгового штурма ====================
+# --- Команды мозгового штурма ---
 active_characters = {}  # active_characters[chat_id] = список character_id
 
 def brainstorm_command(update, context):
@@ -299,9 +297,8 @@ def button_callback(update, context):
     try:
         query.answer()
     except Exception as e:
-        logger.warning(f"Ошибка при ответе на callback: {e}")
+        logger.warning(f"Ошибка callback: {e}")
     chat_id = query.message.chat_id
-
     if data.startswith("select_"):
         char_id = data.replace("select_", "")
         char = WARHAMMER_CHARACTERS.get(char_id)
@@ -367,7 +364,6 @@ def dismiss_command(update, context):
     if chat_id not in active_characters or not active_characters[chat_id]:
         update.message.reply_text("Нет призванных воинов для прощания.")
         return
-
     for char_id in active_characters[chat_id]:
         char = WARHAMMER_CHARACTERS.get(char_id)
         msgs = get_last_messages_db(chat_id, thread_id, limit=10)
@@ -429,7 +425,6 @@ def text_message_handler(update, context):
         return
     thread_id = update.message.message_thread_id or update.effective_chat.id
     save_message_to_db(chat_id, thread_id, user_id, text)
-
     if awaiting_question.get(chat_id, False):
         awaiting_question[chat_id] = False
         msgs = get_last_messages_db(chat_id, thread_id, limit=10)
@@ -447,7 +442,6 @@ def text_message_handler(update, context):
                     logger.warning(f"Ошибка редактирования ответа: {e}")
                     time.sleep(1)
         return
-
     if chat_id in active_characters and active_characters[chat_id]:
         responses = {}
         for char_id in active_characters[chat_id]:
@@ -491,17 +485,17 @@ def text_message_handler(update, context):
                             logger.warning(f"Ошибка редактирования комментария: {e}")
                             time.sleep(1)
 
-# ==================== Команда /clear ====================
+# --- Команда /clear ---
 def clear_command(update, context):
     chat_id = update.effective_chat.id
     try:
         supabase.table("messages").delete().eq("chat_id", chat_id).execute()
         update.message.reply_text("Контекст очищен, брат.", parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e:
-        logger.warning(f"Ошибка при очистке контекста: {e}")
-        update.message.reply_text("Ошибка при очистке контекста.", parse_mode=ParseMode.MARKDOWN_V2)
+        logger.warning(f"Ошибка очистки контекста: {e}")
+        update.message.reply_text("Ошибка очистки контекста.", parse_mode=ParseMode.MARKDOWN_V2)
 
-# ==================== Установка вебхука ====================
+# --- Установка вебхука ---
 def set_webhook():
     if APP_URL:
         webhook_url = f"{APP_URL}/{BOT_TOKEN}"
@@ -510,7 +504,7 @@ def set_webhook():
     else:
         logger.warning("APP_URL не задан. Установите вебхук вручную.")
 
-# ==================== Регистрация обработчиков ====================
+# --- Регистрация обработчиков ---
 dispatcher.add_handler(CommandHandler("start", start_command))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("ask", ask_command))
@@ -528,7 +522,7 @@ dispatcher.add_handler(CommandHandler("summarize", summarize_command))
 dispatcher.add_handler(CallbackQueryHandler(button_callback))
 dispatcher.add_handler(MessageHandler(Filters.text, text_message_handler))
 
-# ==================== Flask эндпоинты ====================
+# --- Flask эндпоинты ---
 @app.route("/")
 def index():
     return "Брат, Император охраняет Империум!"
@@ -541,7 +535,7 @@ def webhook_endpoint():
     dispatcher.process_update(update_obj)
     return jsonify({"ok": True})
 
-# ==================== Основной запуск ====================
+# --- Основной запуск ---
 if __name__ == "__main__":
     set_webhook()
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
