@@ -37,13 +37,16 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # ==================== ThreadPoolExecutor для фоновых задач ====================
 executor = ThreadPoolExecutor(max_workers=4)
 
-# ==================== Функция для обработки HTML ====================
-def escape_html(text: str) -> str:
-    # Заменяем теги <br> на перевод строки, экранируем символы
-    text = text.replace("<br>", "\n").replace("<br/>", "\n")
-    return (text.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;"))
+# ==================== Функция экранирования для MarkdownV2 ====================
+def escape_md_v2(text: str) -> str:
+    escape_chars = r'_*[]()~`>#+-=|{}.!'
+    escaped = ""
+    for char in text:
+        if char in escape_chars:
+            escaped += "\\" + char
+        else:
+            escaped += char
+    return escaped
 
 # ==================== Функции работы с базой данных ====================
 def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
@@ -55,11 +58,11 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
 
 def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
     try:
-        res = supabase.table("messages")\
-            .select("text")\
-            .eq("chat_id", chat_id)\
-            .eq("thread_id", thread_id)\
-            .order("timestamp", desc=True)\
+        res = supabase.table("messages") \
+            .select("text") \
+            .eq("chat_id", chat_id) \
+            .eq("thread_id", thread_id) \
+            .order("timestamp", desc=True) \
             .limit(limit).execute()
         rows = res.data or []
         rows.reverse()
@@ -81,9 +84,9 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
 
 def update_character_state(chat_id: int, character_id: str):
     try:
-        res = supabase.table("characters_state")\
-            .select("*")\
-            .eq("chat_id", chat_id)\
+        res = supabase.table("characters_state") \
+            .select("*") \
+            .eq("chat_id", chat_id) \
             .eq("character_id", character_id).execute()
         rows = res.data or []
         if not rows:
@@ -122,12 +125,12 @@ def stream_deepseek_api(prompt: str, context_msgs: list):
                 full_text += text_chunk
                 current_time = time.time()
                 if current_time - last_update >= 1:
-                    yield escape_html(full_text)
+                    yield escape_md_v2(full_text)
                     last_update = current_time
-        yield escape_html(full_text)
+        yield escape_md_v2(full_text)
     except Exception as e:
         logger.error(f"DeepSeek API streaming error: {e}")
-        yield escape_html(f"Ошибка DeepSeek: {e}")
+        yield escape_md_v2(f"Ошибка DeepSeek: {e}")
 
 def stream_summarize(character_name: str, prompt: str, context_msgs: list):
     messages = [{"role": "system", "content": "Ты – мудрый слуга Императора, суммирующий ход битвы."}]
@@ -151,12 +154,12 @@ def stream_summarize(character_name: str, prompt: str, context_msgs: list):
                 full_text += text_chunk
                 current_time = time.time()
                 if current_time - last_update >= 1:
-                    yield escape_html(full_text)
+                    yield escape_md_v2(full_text)
                     last_update = current_time
-        yield escape_html(full_text)
+        yield escape_md_v2(full_text)
     except Exception as e:
         logger.error(f"DeepSeek Summarize streaming error: {e}")
-        yield escape_html(f"Ошибка суммаризации: {e}")
+        yield escape_md_v2(f"Ошибка суммаризации: {e}")
 
 # ==================== Лор персонажей и ВАЛТОРа ====================
 VALTOR_LORE = {
@@ -165,7 +168,7 @@ VALTOR_LORE = {
     "description": (
         "Брат Империума, закалённый в пламени бесконечных сражений с ксеносами и еретиками. "
         "ВАЛТОР – непоколебимый защитник, чей стальной взгляд пробивает тьму хаоса, а его слова – как молоты правосудия. "
-        "Он ведёт своих братьев к свету Императора. Для подробностей нажми <b>/help</b>."
+        "Он ведёт своих братьев к свету Императора. Для подробностей нажми *\\/help*."
     )
 }
 
@@ -174,7 +177,7 @@ WARHAMMER_CHARACTERS = {
         "display_name": "ГРАДИС — Архивариус Знания",
         "gif_url": "https://i.imgur.com/SgyqpOp.mp4",
         "description": (
-            "Хранитель священных манускриптов, библиотека древних тайн. Он обращает хаос кода в священную гармонию. "
+            "Хранитель священных манускриптов и библиотека древних тайн. Он обращает хаос кода в священную гармонию. "
             "Изучи его слова, чтобы постичь истину, скрытую в священных текстах."
         ),
         "prompt": "Отвечай строго и возвышенно, как Архивариус, рассеивая ересь неструктурированного кода."
@@ -184,7 +187,7 @@ WARHAMMER_CHARACTERS = {
         "gif_url": "https://i.imgur.com/6oEYvKs.mp4",
         "description": (
             "Сверхразум, порождённый в запретных лабораториях Марса. Он разрывает старые догмы и открывает путь к революционным идеям. "
-            "Вслушайся в его видения, и перед тобой откроется бесконечное множество возможностей."
+            "Вслушайся в его видения, и перед тобой откроется множество возможностей."
         ),
         "prompt": "Говори многогранно, разрывая оковы устаревших догм и воздвигая новый порядок."
     },
@@ -192,7 +195,7 @@ WARHAMMER_CHARACTERS = {
         "display_name": "АКСИОС — Незыблемый Столп Эффективности",
         "gif_url": "https://i.imgur.com/q3vBdw3.mp4",
         "description": (
-            "Непреклонный страж порядка, палач неэффективности. Его взгляд – как молот правосудия, разоблачающий слабости, "
+            "Непреклонный страж порядка, палач неэффективности. Его взгляд – молот правосудия, разоблачающий слабости, "
             "а его слова направляют воинов к совершенству. Услышь его строгость!"
         ),
         "prompt": "Излагай с безжалостной строгостью, разоблачая слабости и направляя воинов к совершенству."
@@ -219,8 +222,8 @@ def ask_command(update, context):
     chat_id = update.effective_chat.id
     awaiting_question[chat_id] = True
     update.message.reply_text(
-        "<b>Слава Императору!</b> Голос твой достиг священных аудио-каналов Империума. Изложи свой вопрос.",
-        parse_mode=ParseMode.HTML
+        "*Слава Императору!* Голос твой достиг священных аудио-каналов Империума. Изложи свой вопрос.",
+        parse_mode=ParseMode.MARKDOWN_V2
     )
 
 # ==================== Команда /start ====================
@@ -232,8 +235,8 @@ def start_command(update, context):
     )
     temp_msg = update.message.reply_photo(
         photo=VALTOR_LORE['image_url'],
-        caption="<b>Брат, Император уже зовёт!</b>\nДля подробностей нажми <b>/help</b>.",
-        parse_mode=ParseMode.HTML
+        caption="*Брат, Император уже зовёт!*\nДля подробностей нажми *\\/help*.",
+        parse_mode=ParseMode.MARKDOWN_V2
     )
     for generated in stream_deepseek_api(prompt, []):
         if generated.strip():
@@ -242,7 +245,7 @@ def start_command(update, context):
                     chat_id=chat_id,
                     message_id=temp_msg.message_id,
                     caption=generated,
-                    parse_mode=ParseMode.HTML
+                    parse_mode=ParseMode.MARKDOWN_V2
                 )
             except Exception as e:
                 logger.warning(f"Ошибка редактирования приветствия: {e}")
@@ -256,8 +259,8 @@ def help_command(update, context):
         "/start, /help, /ask, /context, /clear, /brainstorm, /active, /dismiss, /summarize, /stats."
     )
     temp_msg = update.message.reply_text(
-        "<i>Слушай, воин, вот заповеди Императора...</i>",
-        parse_mode=ParseMode.HTML
+        "_Слушай, воин, вот заповеди Императора..._",
+        parse_mode=ParseMode.MARKDOWN_V2
     )
     for generated in stream_deepseek_api(prompt, []):
         if generated.strip():
@@ -266,7 +269,7 @@ def help_command(update, context):
                     chat_id=chat_id,
                     message_id=temp_msg.message_id,
                     text=generated,
-                    parse_mode=ParseMode.HTML
+                    parse_mode=ParseMode.MARKDOWN_V2
                 )
             except Exception as e:
                 logger.warning(f"Ошибка редактирования /help: {e}")
@@ -285,8 +288,8 @@ def brainstorm_command(update, context):
     markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_animation(
         animation=BRAINSTORM_ANIMATION_URL,
-        caption="<b>Выбери воина для мозгового штурма:</b>",
-        parse_mode=ParseMode.HTML,
+        caption="*Выбери воина для мозгового штурма:*",
+        parse_mode=ParseMode.MARKDOWN_V2,
         reply_markup=markup
     )
 
@@ -310,8 +313,8 @@ def button_callback(update, context):
         bot.send_animation(
             chat_id=chat_id,
             animation=char["gif_url"],
-            caption=f"<b>{char['display_name']}</b>\n{char['description']}",
-            parse_mode=ParseMode.HTML,
+            caption=f"*{escape_md_v2(char['display_name'])}*\n{escape_md_v2(char['description'])}",
+            parse_mode=ParseMode.MARKDOWN_V2,
             reply_markup=markup
         )
     elif data.startswith("summon_"):
@@ -331,8 +334,8 @@ def button_callback(update, context):
         temp_msg = bot.send_animation(
             chat_id=chat_id,
             animation=char["gif_url"],
-            caption="<i>Голос Императора зовёт в бой!</i>",
-            parse_mode=ParseMode.HTML
+            caption="_Голос Императора зовёт в бой!_",
+            parse_mode=ParseMode.MARKDOWN_V2
         )
         for generated in stream_deepseek_api(prompt, []):
             if generated.strip():
@@ -340,8 +343,8 @@ def button_callback(update, context):
                     bot.edit_message_caption(
                         chat_id=chat_id,
                         message_id=temp_msg.message_id,
-                        caption=f"<b>Призыв №{summon_count}:</b>\n{generated}",
-                        parse_mode=ParseMode.HTML
+                        caption=f"*Призыв №{summon_count}:*\n{generated}",
+                        parse_mode=ParseMode.MARKDOWN_V2
                     )
                 except Exception as e:
                     logger.warning(f"Ошибка редактирования вступительного сообщения: {e}")
@@ -354,7 +357,7 @@ def active_command(update, context):
     if chat_id in active_characters and active_characters[chat_id]:
         names = [WARHAMMER_CHARACTERS[char_id]["display_name"] for char_id in active_characters[chat_id]]
         names_joined = "\n".join(names)
-        update.message.reply_text(f"<b>На поле битвы активны:</b>\n{names_joined}", parse_mode=ParseMode.HTML)
+        update.message.reply_text(f"*На поле битвы активны:*\n{names_joined}", parse_mode=ParseMode.MARKDOWN_V2)
     else:
         update.message.reply_text("В этот час нет призванных воинов.")
 
@@ -369,15 +372,15 @@ def dismiss_command(update, context):
         char = WARHAMMER_CHARACTERS.get(char_id)
         msgs = get_last_messages_db(chat_id, thread_id, limit=10)
         prompt = f"Подведи итог битвы и попрощайся в стиле {char['display_name']}. Учти последние события: {msgs}"
-        temp_msg = update.message.reply_text("<i>Император подводит итог...</i>", parse_mode=ParseMode.HTML)
+        temp_msg = update.message.reply_text("_Император подводит итог..._", parse_mode=ParseMode.MARKDOWN_V2)
         for generated in stream_summarize(char["display_name"], prompt, msgs):
             if generated.strip():
                 try:
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=temp_msg.message_id,
-                        text=f"<blockquote>Прощание с <b>{char['display_name']}</b>:\n{generated}</blockquote>",
-                        parse_mode=ParseMode.HTML
+                        text=f"> *Прощание с {escape_md_v2(char['display_name'])}:*\n{generated}",
+                        parse_mode=ParseMode.MARKDOWN_V2
                     )
                 except Exception as e:
                     logger.warning(f"Ошибка редактирования итогового сообщения: {e}")
@@ -397,22 +400,22 @@ def stats_command(update, context):
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or chat_id
     msgs = get_last_messages_db(chat_id, thread_id, limit=100)
-    update.message.reply_text(f"В недавней битве за Империум {len(msgs)} сообщений.")
+    update.message.reply_text(f"В недавней битве за Империум {len(msgs)} сообщений.", parse_mode=ParseMode.MARKDOWN_V2)
 
 def summarize_command(update, context):
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or chat_id
     msgs = get_last_messages_db(chat_id, thread_id, limit=30)
     prompt = "Сформируй краткий итог боевых действий в стиле Империума."
-    temp_msg = update.message.reply_text("<i>Император суммирует бой...</i>", parse_mode=ParseMode.HTML)
+    temp_msg = update.message.reply_text("_Император суммирует бой..._", parse_mode=ParseMode.MARKDOWN_V2)
     for generated in stream_summarize("Обзор сражения", prompt, msgs):
         if generated.strip():
             try:
                 bot.edit_message_text(
                     chat_id=chat_id,
                     message_id=temp_msg.message_id,
-                    text=f"<b>Итог битвы:</b>\n{generated}",
-                    parse_mode=ParseMode.HTML
+                    text=f"*Итог битвы:*\n{generated}",
+                    parse_mode=ParseMode.MARKDOWN_V2
                 )
             except Exception as e:
                 logger.warning(f"Ошибка редактирования итогового сообщения: {e}")
@@ -430,15 +433,15 @@ def text_message_handler(update, context):
     if awaiting_question.get(chat_id, False):
         awaiting_question[chat_id] = False
         msgs = get_last_messages_db(chat_id, thread_id, limit=10)
-        temp_message = update.message.reply_text("<i>Слава Императору! Формирую ответ...</i>", parse_mode=ParseMode.HTML)
+        temp_message = update.message.reply_text("_Слава Императору! Формирую ответ..._", parse_mode=ParseMode.MARKDOWN_V2)
         for generated in stream_deepseek_api(text, msgs):
             if generated.strip():
                 try:
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=temp_message.message_id,
-                        text=f"<blockquote>Ответ Императора:\n{generated}</blockquote>",
-                        parse_mode=ParseMode.HTML
+                        text=f"> *Ответ Императора:*\n{generated}",
+                        parse_mode=ParseMode.MARKDOWN_V2
                     )
                 except Exception as e:
                     logger.warning(f"Ошибка редактирования ответа: {e}")
@@ -451,7 +454,7 @@ def text_message_handler(update, context):
             char = WARHAMMER_CHARACTERS.get(char_id)
             msgs = get_last_messages_db(chat_id, thread_id, limit=10)
             full_prompt = f"{char['prompt']}\nВоин сказал: {text}\nОтветь как {char['display_name']}, голосом истинным для Империума."
-            temp = bot.send_message(chat_id=chat_id, text="<i>Император направляет голос битвы...</i>", parse_mode=ParseMode.HTML)
+            temp = bot.send_message(chat_id=chat_id, text="_Император направляет голос битвы..._", parse_mode=ParseMode.MARKDOWN_V2)
             full_response = ""
             for generated in stream_deepseek_api(full_prompt, msgs):
                 full_response = generated
@@ -459,8 +462,8 @@ def text_message_handler(update, context):
                     bot.edit_message_text(
                         chat_id=chat_id,
                         message_id=temp.message_id,
-                        text=f"<b>{char['display_name']}</b> отвечает:\n{generated}",
-                        parse_mode=ParseMode.HTML
+                        text=f"*{escape_md_v2(char['display_name'])}* отвечает:\n{generated}",
+                        parse_mode=ParseMode.MARKDOWN_V2
                     )
                 except Exception as e:
                     logger.warning(f"Ошибка редактирования ответа в битве: {e}")
@@ -474,15 +477,15 @@ def text_message_handler(update, context):
                 char = WARHAMMER_CHARACTERS.get(char_id)
                 other_response = responses.get(other_ids[0], "")
                 comment_prompt = f"Дай краткий комментарий к ответу: \"{other_response}\" в стиле {char['display_name']}."
-                temp = bot.send_message(chat_id=chat_id, text="<i>Император добавляет слово...</i>", parse_mode=ParseMode.HTML)
+                temp = bot.send_message(chat_id=chat_id, text="_Император добавляет слово..._", parse_mode=ParseMode.MARKDOWN_V2)
                 for generated in stream_deepseek_api(comment_prompt, []):
                     if generated.strip():
                         try:
                             bot.edit_message_text(
                                 chat_id=chat_id,
                                 message_id=temp.message_id,
-                                text=f"<blockquote><b>{char['display_name']}</b> (комментарий):\n{generated}</blockquote>",
-                                parse_mode=ParseMode.HTML
+                                text=f"> *{escape_md_v2(char['display_name'])}* (комментарий):\n{generated}",
+                                parse_mode=ParseMode.MARKDOWN_V2
                             )
                         except Exception as e:
                             logger.warning(f"Ошибка редактирования комментария: {e}")
@@ -493,10 +496,10 @@ def clear_command(update, context):
     chat_id = update.effective_chat.id
     try:
         supabase.table("messages").delete().eq("chat_id", chat_id).execute()
-        update.message.reply_text("Контекст очищен, брат.")
+        update.message.reply_text("Контекст очищен, брат.", parse_mode=ParseMode.MARKDOWN_V2)
     except Exception as e:
         logger.warning(f"Ошибка при очистке контекста: {e}")
-        update.message.reply_text("Ошибка при очистке контекста.")
+        update.message.reply_text("Ошибка при очистке контекста.", parse_mode=ParseMode.MARKDOWN_V2)
 
 # ==================== Установка вебхука ====================
 def set_webhook():
@@ -513,7 +516,8 @@ dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("ask", ask_command))
 dispatcher.add_handler(CommandHandler("context", lambda update, context: update.message.reply_text(
     "\n".join(get_last_messages_db(update.effective_chat.id,
-                                     update.message.message_thread_id or update.effective_chat.id, limit=30))
+                                     update.message.message_thread_id or update.effective_chat.id, limit=30)),
+    parse_mode=ParseMode.MARKDOWN_V2
 )))
 dispatcher.add_handler(CommandHandler("clear", clear_command))
 dispatcher.add_handler(CommandHandler("brainstorm", brainstorm_command))
