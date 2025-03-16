@@ -21,10 +21,10 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-APP_URL = os.getenv("APP_URL", "")         # Например, https://aibalya-1.onrender.com
-SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секрет для вебхука
+APP_URL = os.getenv("APP_URL", "")         # Например: https://aibalya-1.onrender.com
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секретный токен для вебхука
 
-# ==================== Инициализация Telegram бота ====================
+# ==================== Инициализация бота и диспетчера ====================
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
@@ -37,7 +37,7 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     try:
         data = {
             "chat_id": chat_id,
-            "thread_id": thread_id,  # Если темы нет, передавайте chat_id или None
+            "thread_id": thread_id,  # Если темы не используется, можно передавать chat_id
             "user_id": user_id,
             "text": text
         }
@@ -48,12 +48,12 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
 def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
     """Извлекает последние 'limit' сообщений для данного chat_id и thread_id."""
     try:
-        res = supabase.table("messages")\
-            .select("text")\
-            .eq("chat_id", chat_id)\
-            .eq("thread_id", thread_id)\
-            .order("timestamp", desc=True)\
-            .limit(limit)\
+        res = supabase.table("messages") \
+            .select("text") \
+            .eq("chat_id", chat_id) \
+            .eq("thread_id", thread_id) \
+            .order("timestamp", desc=True) \
+            .limit(limit) \
             .execute()
         rows = res.data or []
         rows.reverse()
@@ -63,7 +63,7 @@ def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
         return []
 
 def save_conversation_history(chat_id: int, thread_id: int, active_character: str, conversation: list):
-    """Сохраняет историю разговора в таблицу conversation_history."""
+    """Сохраняет историю сессии в таблицу conversation_history."""
     conversation_text = "\n".join(conversation)
     data = {
         "chat_id": chat_id,
@@ -78,14 +78,17 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
     except Exception as e:
         logger.warning(f"Ошибка сохранения истории сессии: {e}")
 
-# ==================== Функции работы с состоянием персонажей ====================
+# ==================== Работа с состоянием персонажей ====================
 def update_character_state(chat_id: int, character_id: str):
-    """Обновляет или создаёт запись в таблице characters_state для данного чата и персонажа."""
+    """
+    Обновляет (увеличивает) счетчик призывов персонажа для данного чата.
+    Если записи нет, создаёт новую.
+    """
     try:
-        res = supabase.table("characters_state")\
-            .select("*")\
-            .eq("chat_id", chat_id)\
-            .eq("character_id", character_id)\
+        res = supabase.table("characters_state") \
+            .select("*") \
+            .eq("chat_id", chat_id) \
+            .eq("character_id", character_id) \
             .execute()
         rows = res.data or []
         if not rows:
@@ -100,8 +103,8 @@ def update_character_state(chat_id: int, character_id: str):
         else:
             row = rows[0]
             new_count = row["summon_count"] + 1
-            supabase.table("characters_state")\
-                .update({"summon_count": new_count})\
+            supabase.table("characters_state") \
+                .update({"summon_count": new_count}) \
                 .eq("id", row["id"]).execute()
             return new_count
     except Exception as e:
@@ -110,9 +113,12 @@ def update_character_state(chat_id: int, character_id: str):
 
 # ==================== DeepSeek API ====================
 def call_deepseek_api(prompt: str, context_msgs: list) -> str:
-    """Вызывает DeepSeek API для генерации ответа."""
+    """
+    Вызывает DeepSeek API для генерации ответа.
+    Если ключ не задан, возвращает заглушку.
+    """
     if not DEEPSEEK_API_KEY:
-        return f"DeepSeek API не настроен. Prompt: {prompt}\nКонтекст: {context_msgs}"
+        return f"DeepSeek API не настроен.\nPrompt: {prompt}\nКонтекст: {context_msgs}"
     url = "https://api.deepseek.ai/v1/ask"  # Уточните реальный URL
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
@@ -132,10 +138,12 @@ def call_deepseek_api(prompt: str, context_msgs: list) -> str:
         return f"Ошибка DeepSeek: {e}"
 
 def summarize_context(character_name: str, prompt: str, context_msgs: list) -> str:
-    """Вызывает DeepSeek API для суммаризации (подведения итогов) при /dismiss."""
+    """
+    Вызывает DeepSeek API для суммаризации (подведения итогов) при команде /dismiss.
+    """
     if not DEEPSEEK_API_KEY:
         return f"Суммаризация: {character_name} говорит: {prompt}\nКонтекст: {context_msgs}"
-    url = "https://api.deepseek.ai/v1/summarize"  # Уточните URL
+    url = "https://api.deepseek.ai/v1/summarize"  # Уточните URL для суммаризации
     headers = {
         "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
         "Content-Type": "application/json"
@@ -157,13 +165,15 @@ def summarize_context(character_name: str, prompt: str, context_msgs: list) -> s
 awaiting_question = {}  # awaiting_question[chat_id] = True/False
 
 def ask_command(update, context):
-    """Пользователь нажимает /ask, бот просит ввести вопрос отдельным сообщением."""
+    """
+    При вызове /ask бот устанавливает флаг ожидания и просит ввести вопрос отдельным сообщением.
+    """
     chat_id = update.effective_chat.id
     awaiting_question[chat_id] = True
     update.message.reply_text("Введите свой вопрос отдельным сообщением:")
 
 # ==================== Данные о персонажах (Warhammer-стиль) ====================
-# Используем предоставленные ссылки на MP4 файлы
+# Используем прямые ссылки на MP4 для персонажей.
 WARHAMMER_CHARACTERS = {
     "gradis": {
         "display_name": "ГРАДИС — Архивариус Знания (Эксперт-человек)",
@@ -250,7 +260,7 @@ def button_callback(update, context):
         if not char:
             query.message.reply_text("Ошибка: персонаж не найден.")
             return
-        # Обновляем состояние персонажа в Supabase и увеличиваем счётчик призывов
+        # Обновляем состояние персонажа в Supabase
         summon_count = update_character_state(chat_id, char_id)
         # Устанавливаем активного персонажа для чата
         active_characters[chat_id] = char_id
@@ -276,7 +286,10 @@ def active_command(update, context):
 
 # ==================== Команда /dismiss ====================
 def dismiss_command(update, context):
-    """Завершает сессию активного персонажа: подводит итог и сохраняет историю разговора."""
+    """
+    Завершает сессию активного персонажа: подводит итог,
+    сохраняет историю сессии в таблицу conversation_history и сбрасывает активного персонажа.
+    """
     chat_id = update.effective_chat.id
     thread_id = update.message.message_thread_id or update.effective_chat.id
     if chat_id not in active_characters:
@@ -303,8 +316,10 @@ def dismiss_command(update, context):
     del active_characters[chat_id]
 
 # ==================== Автоматический режим для /ask (двухшаговый) ====================
-# При вызове /ask устанавливаем флаг ожидания, а следующее текстовое сообщение обрабатываем как вопрос.
 def ask_command(update, context):
+    """
+    При вызове /ask бот устанавливает флаг ожидания и просит ввести вопрос отдельным сообщением.
+    """
     chat_id = update.effective_chat.id
     awaiting_question[chat_id] = True
     update.message.reply_text("Введите свой вопрос отдельным сообщением:")
@@ -314,20 +329,20 @@ def text_message_handler(update, context):
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     text = update.message.text.strip()
-    # Игнорируем команды и сообщения от ботов
+    # Игнорируем сообщения от ботов и команды
     if update.effective_user.is_bot or text.startswith("/"):
         return
     thread_id = update.message.message_thread_id or update.effective_chat.id
     # Сохраняем сообщение в Supabase
     save_message_to_db(chat_id, thread_id, user_id, text)
-    # Если ждем вопроса для /ask, обрабатываем его и сбрасываем флаг
+    # Если ожидаем вопрос для /ask, обрабатываем его
     if awaiting_question.get(chat_id, False):
         awaiting_question[chat_id] = False
         msgs = get_last_messages_db(chat_id, thread_id, limit=30)
         answer = call_deepseek_api(prompt=text, context_msgs=msgs)
         update.message.reply_text(f"Ответ:\n{answer}")
         return
-    # Если есть активный персонаж, он автоматически отвечает на каждое новое сообщение
+    # Если есть активный персонаж, он автоматически отвечает
     if chat_id in active_characters:
         char_id = active_characters[chat_id]
         char = WARHAMMER_CHARACTERS.get(char_id)
@@ -349,8 +364,13 @@ def set_webhook():
 dispatcher.add_handler(CommandHandler("start", start_command))
 dispatcher.add_handler(CommandHandler("help", help_command))
 dispatcher.add_handler(CommandHandler("ask", ask_command))
-dispatcher.add_handler(CommandHandler("context", context_command))
-dispatcher.add_handler(CommandHandler("clear", clear_command))
+dispatcher.add_handler(CommandHandler("context", lambda update, context: update.message.reply_text(
+    "\n".join(get_last_messages_db(update.effective_chat.id, update.message.message_thread_id or update.effective_chat.id, limit=30))
+)))
+dispatcher.add_handler(CommandHandler("clear", lambda update, context: (
+    supabase.table("messages").delete().eq("chat_id", update.effective_chat.id).execute(),
+    update.message.reply_text("Контекст очищен.")
+)))
 dispatcher.add_handler(CommandHandler("brainstorm", brainstorm_command))
 dispatcher.add_handler(CommandHandler("active", active_command))
 dispatcher.add_handler(CommandHandler("dismiss", dismiss_command))
