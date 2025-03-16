@@ -1,6 +1,7 @@
 import os
 import logging
 import openai
+import requests
 from flask import Flask, request, jsonify
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, CallbackQueryHandler, Filters
@@ -17,15 +18,15 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "NO_TOKEN_PROVIDED")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-APP_URL = os.getenv("APP_URL", "")         # Например: https://aibalya-1.onrender.com
-SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секрет для вебхука
+APP_URL = os.getenv("APP_URL", "")         # Например, https://aibalya-1.onrender.com
+SECRET_TOKEN = os.getenv("SECRET_TOKEN", "") # Секретный токен для вебхука
 
 # ==================== Инициализация бота и диспетчера ====================
 bot = Bot(token=BOT_TOKEN)
 dispatcher = Dispatcher(bot, None, workers=2, use_context=True)
 
 # ==================== Настройка DeepSeek через openai ====================
-# ПИНьте версию библиотеки openai, например, установите openai==0.28 в requirements.txt
+# Для корректной работы, установите openai==0.28 в requirements.txt
 openai.api_key = DEEPSEEK_API_KEY
 openai.api_base = "https://api.deepseek.com"
 
@@ -46,7 +47,7 @@ def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     except Exception as e:
         logger.warning(f"Ошибка записи в DB: {e}")
 
-def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
+def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
     """Извлекает последние 'limit' сообщений для данного chat_id и thread_id."""
     try:
         res = supabase.table("messages") \
@@ -57,7 +58,7 @@ def get_last_messages_db(chat_id: int, thread_id: int, limit=30):
             .limit(limit) \
             .execute()
         rows = res.data or []
-        rows.reverse()
+        rows.reverse()  # от старых к новым
         return [r["text"] for r in rows]
     except Exception as e:
         logger.warning(f"Ошибка получения сообщений: {e}")
@@ -179,7 +180,7 @@ def help_command(update, context):
     help_text = (
         "/start — Приветствие\n"
         "/help — Справка по командам\n"
-        "/ask <текст вопроса> — Задать вопрос (двухшаговый режим)\n"
+        "/ask <вопрос> — Задать вопрос (двухшаговый режим)\n"
         "/context — Показать последние 30 сообщений\n"
         "/clear — Очистить контекст\n"
         "/brainstorm — Начать мозговой штурм (выбор персонажа)\n"
@@ -235,6 +236,7 @@ WARHAMMER_CHARACTERS = {
 }
 
 # ==================== Команды мозгового штурма ====================
+# Поддержка нескольких активных персонажей: для каждого чата хранится список.
 active_characters = {}  # active_characters[chat_id] = список character_id
 
 def brainstorm_command(update, context):
@@ -314,7 +316,7 @@ def dismiss_command(update, context):
         return
     for char_id in active_characters[chat_id]:
         char = WARHAMMER_CHARACTERS.get(char_id)
-        msgs = get_last_messages_db(chat_id, thread_id, limit=30)
+        msgs = get_last_messages_db(chat_id, thread_id, limit=10)
         summary = summarize_context(char["display_name"], char["prompt"], msgs)
         update.message.reply_text(f"Прощаемся с *{char['display_name']}*.\n{summary}", parse_mode=ParseMode.MARKDOWN)
         conv = get_last_messages_db(chat_id, thread_id, limit=100)
@@ -333,11 +335,11 @@ def dismiss_command(update, context):
 
 # ==================== Команда /help ====================
 def help_command(update, context):
-    """Выводит список доступных команд с кратким описанием."""
+    """Выводит список доступных команд с описанием."""
     help_text = (
         "/start — Приветствие\n"
         "/help — Справка по командам\n"
-        "/ask <вопрос> — Задать вопрос (двухшаговый режим)\n"
+        "/ask <текст вопроса> — Задать вопрос (двухшаговый режим)\n"
         "/context — Показать последние 30 сообщений\n"
         "/clear — Очистить контекст\n"
         "/brainstorm — Начать мозговой штурм (выбор персонажа)\n"
@@ -359,17 +361,27 @@ def text_message_handler(update, context):
     save_message_to_db(chat_id, thread_id, user_id, text)
     if awaiting_question.get(chat_id, False):
         awaiting_question[chat_id] = False
-        msgs = get_last_messages_db(chat_id, thread_id, limit=30)
+        msgs = get_last_messages_db(chat_id, thread_id, limit=10)
         answer = call_deepseek_api(prompt=text, context_msgs=msgs)
         update.message.reply_text(f"Ответ:\n{answer}")
         return
     if chat_id in active_characters and active_characters[chat_id]:
         for char_id in active_characters[chat_id]:
             char = WARHAMMER_CHARACTERS.get(char_id)
-            msgs = get_last_messages_db(chat_id, thread_id, limit=30)
+            msgs = get_last_messages_db(chat_id, thread_id, limit=10)
             full_prompt = f"{char['prompt']}\nПользователь сказал: {text}\nОтветь как {char['display_name']}."
             answer = call_deepseek_api(prompt=full_prompt, context_msgs=msgs)
-            bot.send_message(chat_id=chat_id, text=answer)
+            bot.send_animation(
+                chat_id=chat_id,
+                animation=char["gif_url"],
+                caption=f"*{char['display_name']}*\n\n{answer}",
+                parse_mode=ParseMode.MARKDOWN
+            )
+
+# ==================== Двухшаговый режим для /ask ====================
+awaiting_question = {}  # awaiting_question[chat_id] = True/False
+
+# (Функция ask_command уже определена выше)
 
 # ==================== Автоматическая установка вебхука ====================
 def set_webhook():
