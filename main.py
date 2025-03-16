@@ -52,12 +52,7 @@ def escape_md_v2(text: str) -> str:
 # ==================== Функции работы с базой данных ====================
 def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     try:
-        data = {
-            "chat_id": chat_id,
-            "thread_id": thread_id,
-            "user_id": user_id,
-            "text": text
-        }
+        data = {"chat_id": chat_id, "thread_id": thread_id, "user_id": user_id, "text": text}
         supabase.table("messages").insert(data).execute()
     except Exception as e:
         logger.warning(f"Ошибка записи в DB: {e}")
@@ -69,8 +64,7 @@ def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
             .eq("chat_id", chat_id) \
             .eq("thread_id", thread_id) \
             .order("timestamp", desc=True) \
-            .limit(limit) \
-            .execute()
+            .limit(limit).execute()
         rows = res.data or []
         rows.reverse()
         return [r["text"] for r in rows]
@@ -80,13 +74,8 @@ def get_last_messages_db(chat_id: int, thread_id: int, limit=10):
 
 def save_conversation_history(chat_id: int, thread_id: int, active_character: str, conversation: list):
     conversation_text = "\n".join(conversation)
-    data = {
-        "chat_id": chat_id,
-        "thread_id": thread_id,
-        "conversation": conversation_text,
-        "active_character": active_character,
-        "session_end": "now()"
-    }
+    data = {"chat_id": chat_id, "thread_id": thread_id, "conversation": conversation_text,
+            "active_character": active_character, "session_end": "now()"}
     try:
         supabase.table("conversation_history").insert(data).execute()
         logger.info("История сессии сохранена успешно.")
@@ -98,16 +87,10 @@ def update_character_state(chat_id: int, character_id: str):
         res = supabase.table("characters_state") \
             .select("*") \
             .eq("chat_id", chat_id) \
-            .eq("character_id", character_id) \
-            .execute()
+            .eq("character_id", character_id).execute()
         rows = res.data or []
         if not rows:
-            data = {
-                "chat_id": chat_id,
-                "character_id": character_id,
-                "summon_count": 1,
-                "last_index": 0
-            }
+            data = {"chat_id": chat_id, "character_id": character_id, "summon_count": 1, "last_index": 0}
             supabase.table("characters_state").insert(data).execute()
             return 1
         else:
@@ -123,9 +106,7 @@ def update_character_state(chat_id: int, character_id: str):
 
 # ==================== Потоковая генерация через DeepSeek API ====================
 def stream_deepseek_api(prompt: str, context_msgs: list):
-    messages = [
-        {"role": "system", "content": "Ты – верный слуга Императора, говорящий на языке боевых истин."}
-    ]
+    messages = [{"role": "system", "content": "Ты – верный слуга Императора, говорящий на языке боевых истин."}]
     if context_msgs:
         context_text = "\n".join(context_msgs)
         messages.append({"role": "system", "content": f"Контекст битвы:\n{context_text}"})
@@ -135,7 +116,7 @@ def stream_deepseek_api(prompt: str, context_msgs: list):
             model="deepseek-chat",
             messages=messages,
             stream=True,
-            timeout=10  # Устанавливаем таймаут для ответа
+            timeout=10
         )
         full_text = ""
         last_update = time.time()
@@ -145,20 +126,16 @@ def stream_deepseek_api(prompt: str, context_msgs: list):
                 text_chunk = delta.get('content', '')
                 full_text += text_chunk
                 current_time = time.time()
-                # Обновляем сообщение не чаще чем раз в 1 секунду
                 if current_time - last_update >= 1:
                     yield escape_md_v2(full_text)
                     last_update = current_time
-        # Финальное обновление
         yield escape_md_v2(full_text)
     except Exception as e:
         logger.error(f"DeepSeek API streaming error: {e}")
         yield escape_md_v2(f"Ошибка DeepSeek: {e}")
 
 def stream_summarize(character_name: str, prompt: str, context_msgs: list):
-    messages = [
-        {"role": "system", "content": "Ты – мудрый слуга Императора, суммирующий ход битвы."}
-    ]
+    messages = [{"role": "system", "content": "Ты – мудрый слуга Императора, суммирующий ход битвы."}]
     if context_msgs:
         context_text = "\n".join(context_msgs)
         messages.append({"role": "system", "content": f"Запись сражения:\n{context_text}"})
@@ -241,22 +218,24 @@ def ask_command(update, context):
     awaiting_question[chat_id] = True
     update.message.reply_text(escape_md_v2("Брат, Император слышит твой зов – введи вопрос:"), parse_mode=ParseMode.MARKDOWN_V2)
 
-# ==================== Команда /start (динамическое приветствие) ====================
+# ==================== Команда /start (эпичное приветствие с фото ВАЛТОРа) ====================
 def start_command(update, context):
     chat_id = update.effective_chat.id
-    # Эпическое приветствие без технических меток
     prompt = (
-        f"Сгенерируй эпичное приветствие от космодесантника, вдохновляющее воина, используя стиль Warhammer 40k. "
-        f"Вдохновляй, как истинный защитник Империума. Данные: {VALTOR_LORE['description']}"
+        f"Сгенерируй эпичное приветствие от космодесантника в стиле Warhammer 40k, вдохновляющее воина. "
+        f"Используй данные: {VALTOR_LORE['description']}"
     )
-    temp_msg = update.message.reply_text(escape_md_v2("Брат, Император уже зовёт!"), parse_mode=ParseMode.MARKDOWN_V2)
+    # Отправляем фото ВАЛТОРа с начальными словами, которые сразу же будут заменены
+    temp_msg = update.message.reply_photo(photo=VALTOR_LORE['image_url'],
+                                          caption=escape_md_v2("Брат, Император уже зовёт!"),
+                                          parse_mode=ParseMode.MARKDOWN_V2)
     for generated in stream_deepseek_api(prompt, []):
         if generated.strip():
             try:
-                bot.edit_message_text(chat_id=chat_id,
-                                      message_id=temp_msg.message_id,
-                                      text=generated,
-                                      parse_mode=ParseMode.MARKDOWN_V2)
+                bot.edit_message_caption(chat_id=chat_id,
+                                           message_id=temp_msg.message_id,
+                                           caption=generated,
+                                           parse_mode=ParseMode.MARKDOWN_V2)
             except Exception as e:
                 logger.warning(f"Ошибка редактирования приветствия: {e}")
                 time.sleep(1)
@@ -268,7 +247,8 @@ def help_command(update, context):
         "Сгенерируй список команд для космодесантника в стиле Империума: /start, /help, /ask, /context, /clear, "
         "/brainstorm, /active, /dismiss, /summarize, /stats."
     )
-    temp_msg = update.message.reply_text(escape_md_v2("Слушай, воин, вот заповеди Императора..."), parse_mode=ParseMode.MARKDOWN_V2)
+    temp_msg = update.message.reply_text(escape_md_v2("Слушай, воин, вот заповеди Императора..."),
+                                           parse_mode=ParseMode.MARKDOWN_V2)
     for generated in stream_deepseek_api(prompt, []):
         if generated.strip():
             try:
@@ -296,7 +276,10 @@ def brainstorm_command(update, context):
 def button_callback(update, context):
     query = update.callback_query
     data = query.data
-    query.answer()
+    try:
+        query.answer()
+    except Exception as e:
+        logger.warning(f"Ошибка при ответе на callback: {e}")
     chat_id = query.message.chat_id
 
     if data.startswith("select_"):
@@ -337,10 +320,10 @@ def button_callback(update, context):
         for generated in stream_deepseek_api(prompt, []):
             if generated.strip():
                 try:
-                    bot.edit_message_text(
+                    bot.edit_message_caption(
                         chat_id=chat_id,
                         message_id=temp_msg.message_id,
-                        text=escape_md_v2(f"Призыв №{summon_count}: {generated}"),
+                        caption=escape_md_v2(f"Призыв №{summon_count}: {generated}"),
                         parse_mode=ParseMode.MARKDOWN_V2
                     )
                 except Exception as e:
@@ -383,12 +366,8 @@ def dismiss_command(update, context):
                     time.sleep(1)
         conv = get_last_messages_db(chat_id, thread_id, limit=100)
         try:
-            data = {
-                "chat_id": chat_id,
-                "thread_id": thread_id,
-                "conversation": "\n".join(conv),
-                "active_character": char["display_name"]
-            }
+            data = {"chat_id": chat_id, "thread_id": thread_id, "conversation": "\n".join(conv),
+                    "active_character": char["display_name"]}
             supabase.table("conversation_history").insert(data).execute()
             logger.info("История сессии сохранена.")
         except Exception as e:
