@@ -1,10 +1,13 @@
 from supabase import create_client, Client
 from app.config import SUPABASE_URL, SUPABASE_KEY
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Инициализируем клиента
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-def insert_message(chat_id: int, thread_id: int, user_id: int, text: str):
+def save_message_to_db(chat_id: int, thread_id: int, user_id: int, text: str):
     data = {"chat_id": chat_id, "thread_id": thread_id, "user_id": user_id, "text": text}
     return supabase.table("messages").insert(data).execute()
 
@@ -21,7 +24,6 @@ def save_conversation_history(chat_id: int, thread_id: int, active_character: st
         "session_end": "now()"
     }
     return supabase.table("conversation_history").insert(data).execute()
-
 
 def get_last_messages(chat_id: int, thread_id: int, limit=10):
     res = supabase.table("messages").select("text")\
