@@ -33,18 +33,29 @@ def get_last_messages(chat_id: int, thread_id: int, limit=10):
     rows.reverse()
     return [r["text"] for r in rows]
 
-def update_character_state_db(chat_id: int, character_id: str):
-    res = supabase.table("characters_state").select("*")\
-        .eq("chat_id", chat_id)\
-        .eq("character_id", character_id).execute()
-    rows = res.data or []
-    if not rows:
-        data = {"chat_id": chat_id, "character_id": character_id, "summon_count": 1, "last_index": 0}
-        supabase.table("characters_state").insert(data).execute()
+def update_character_state(chat_id: int, character_id: str):
+    """
+    Обновляет (увеличивает) счетчик призывов персонажа для данного чата.
+    Если записи нет, создаёт новую и возвращает 1, иначе возвращает новое значение счетчика.
+    """
+    try:
+        res = supabase.table("characters_state") \
+            .select("*") \
+            .eq("chat_id", chat_id) \
+            .eq("character_id", character_id) \
+            .execute()
+        rows = res.data or []
+        if not rows:
+            data = {"chat_id": chat_id, "character_id": character_id, "summon_count": 1, "last_index": 0}
+            supabase.table("characters_state").insert(data).execute()
+            return 1
+        else:
+            row = rows[0]
+            new_count = row["summon_count"] + 1
+            supabase.table("characters_state") \
+                .update({"summon_count": new_count}) \
+                .eq("id", row["id"]).execute()
+            return new_count
+    except Exception as e:
+        logger.warning(f"Ошибка обновления состояния персонажа: {e}")
         return 1
-    else:
-        row = rows[0]
-        new_count = row["summon_count"] + 1
-        supabase.table("characters_state").update({"summon_count": new_count})\
-            .eq("id", row["id"]).execute()
-        return new_count
