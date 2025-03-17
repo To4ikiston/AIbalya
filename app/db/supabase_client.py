@@ -1,0 +1,35 @@
+from supabase import create_client, Client
+from app.config import SUPABASE_URL, SUPABASE_KEY
+
+# Инициализируем клиента
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def insert_message(chat_id: int, thread_id: int, user_id: int, text: str):
+    data = {"chat_id": chat_id, "thread_id": thread_id, "user_id": user_id, "text": text}
+    return supabase.table("messages").insert(data).execute()
+
+def get_last_messages(chat_id: int, thread_id: int, limit=10):
+    res = supabase.table("messages").select("text")\
+        .eq("chat_id", chat_id)\
+        .eq("thread_id", thread_id)\
+        .order("timestamp", desc=True)\
+        .limit(limit).execute()
+    rows = res.data or []
+    rows.reverse()
+    return [r["text"] for r in rows]
+
+def update_character_state_db(chat_id: int, character_id: str):
+    res = supabase.table("characters_state").select("*")\
+        .eq("chat_id", chat_id)\
+        .eq("character_id", character_id).execute()
+    rows = res.data or []
+    if not rows:
+        data = {"chat_id": chat_id, "character_id": character_id, "summon_count": 1, "last_index": 0}
+        supabase.table("characters_state").insert(data).execute()
+        return 1
+    else:
+        row = rows[0]
+        new_count = row["summon_count"] + 1
+        supabase.table("characters_state").update({"summon_count": new_count})\
+            .eq("id", row["id"]).execute()
+        return new_count
